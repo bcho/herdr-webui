@@ -59,7 +59,10 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path)
         if url.path == "/":
-            return self.reply((HERE / "index.html").read_text().replace("__CSRF_TOKEN__", "fictional-test-token"), html=True)
+            self.server.page_reads += 1
+            if self.server.fail_page:
+                return self.reply({"error": "Fixture page unavailable"}, 503)
+            return self.reply((HERE / "index.html").read_text().replace("__CSRF_TOKEN__", self.server.csrf_token), html=True)
         if url.path == "/api/tree":
             if self.server.fail_tree:
                 return self.reply({"error": "Fixture offline"}, 502)
@@ -75,6 +78,11 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        self.server.post_attempts += 1
+        if self.headers.get("X-CSRF-Token") != self.server.csrf_token:
+            return self.reply({"error": "missing or bad CSRF token", "code": "csrf_invalid"}, 403)
+        if self.server.deny_action:
+            return self.reply({"error": "client not allowed"}, 403)
         if self.server.delay_action:
             self.server.action_started.set()
             self.server.action_release.wait(5)
@@ -83,7 +91,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             return self.reply({"error": "Fixture action failed"}, 502)
         if self.path == "/api/action/close":
             self.server.tree["panes"] = [p for p in self.server.tree["panes"] if p["pane_id"] != body["pane"]]
-        self.reply({"result": {"ok": True}})
+        self.reply({"ok": True, "result": {"ok": True}})
 
 
 class PhoneUITest(unittest.TestCase):
@@ -101,6 +109,9 @@ class PhoneUITest(unittest.TestCase):
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
         self.httpd.tree = copy.deepcopy(TREE)
         self.httpd.fail_tree = self.httpd.fail_action = self.httpd.delay_action = False
+        self.httpd.fail_page = self.httpd.deny_action = False
+        self.httpd.csrf_token = "fictional-test-token"
+        self.httpd.page_reads = self.httpd.post_attempts = 0
         self.httpd.action_started, self.httpd.action_release = threading.Event(), threading.Event()
         self.httpd.actions, self.httpd.reads = [], []
         self.httpd.delay_pane = None
@@ -397,6 +408,185 @@ class PhoneUITest(unittest.TestCase):
         self.assertTrue(self.page.locator("[data-interrupt-twice]").is_enabled())
         self.assertTrue(self.page.locator("#dock").is_visible())
 
+    def test_send_recovers_after_service_token_rotation(self):
+        self.open()
+        self.httpd.csrf_token = "fictional-restarted-token"
+        self.page.locator("#dock-input").fill("send after restart")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.wait_for_function("document.querySelector('#dock-input').value === ''")
+        self.assertEqual(self.httpd.actions, [("/api/action/prompt", {"pane": "p2", "text": "send after restart"}, "fictional-restarted-token")])
+        self.assertEqual(self.httpd.post_attempts, 2)
+        self.assertEqual(self.httpd.page_reads, 2)
+
+    def test_send_modes_and_alt_enter_recover_after_token_rotation(self):
+        self.open()
+        for mode, enter in (("send", True), ("type", False)):
+            self.httpd.csrf_token = "fictional-token-" + mode
+            self.page.locator("#dock-mode").select_option(mode)
+            self.page.locator("#dock-input").fill("restart fixture")
+            self.page.locator('#dock-form button[type="submit"]').click()
+            self.page.wait_for_function("document.querySelector('#dock-input').value === ''")
+            self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "restart fixture", "enter": enter})
+        self.httpd.csrf_token = "fictional-token-key"
+        self.page.locator("#dock-input").fill("queued WebUI draft")
+        with self.page.expect_response(lambda response: response.url.endswith('/api/action/followup') and response.status == 200):
+            self.page.get_by_role("button", name="Alt-Enter", exact=True).click()
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "queued WebUI draft"})
+        self.assertEqual(self.httpd.post_attempts, 6)
+
+    def test_alt_enter_is_next_to_enter_and_submits_webui_draft(self):
+        self.open()
+        keys = self.page.locator("#dock-keys [data-key]").evaluate_all("els => els.map(el => el.dataset.key)")
+        self.assertEqual(keys[:2], ["enter", "alt+enter"])
+        self.page.locator("#dock-input").fill("my browser follow-up")
+        with self.page.expect_response("**/api/action/followup"):
+            self.page.get_by_role("button", name="Alt-Enter", exact=True).click()
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "my browser follow-up"})
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "")
+
+    def test_alt_enter_without_browser_draft_never_sends_bare_key(self):
+        self.open()
+        self.page.get_by_role("button", name="Alt-Enter", exact=True).click()
+        self.page.get_by_text("Type a message in the WebUI before using Alt-Enter.", exact=True).wait_for()
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_alt_enter_keyboard_submits_draft_and_failure_preserves_it(self):
+        self.open()
+        self.httpd.fail_action = True
+        self.page.locator("#dock-input").fill("follow-up to preserve")
+        with self.page.expect_response("**/api/action/followup"):
+            self.page.locator("#dock-input").press("Alt+Enter")
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "follow-up to preserve")
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "follow-up to preserve"})
+
+    def test_followup_response_loss_warns_before_manual_retry(self):
+        self.open()
+        def drop_response(route):
+            route.fetch()
+            route.abort("failed")
+        self.page.route(self.base + "/api/action/followup", drop_response)
+        self.page.locator("#dock-input").fill("possibly delivered follow-up")
+        self.page.get_by_role("button", name="Alt-Enter", exact=True).click()
+        self.page.get_by_text("inspect it before retrying", exact=False).wait_for()
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "possibly delivered follow-up")
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(len(self.httpd.actions), 1)
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "possibly delivered follow-up"})
+
+    def test_followup_truncated_success_body_preserves_draft_and_warns(self):
+        self.open()
+        def truncate_response(route):
+            route.fetch()
+            route.fulfill(status=200, content_type="application/json", body='{"ok":true,"result":')
+        self.page.route(self.base + "/api/action/followup", truncate_response)
+        self.page.locator("#dock-input").fill("uncertain body delivery")
+        self.page.get_by_role("button", name="Alt-Enter", exact=True).click()
+        self.page.get_by_text("inspect it before retrying", exact=False).wait_for()
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "uncertain body delivery")
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(len(self.httpd.actions), 1)
+
+    def test_delayed_followup_keeps_original_pane_and_new_draft(self):
+        self.open()
+        self.httpd.delay_action = True
+        self.page.locator("#dock-input").fill("original api follow-up")
+        self.page.get_by_role("button", name="Alt-Enter", exact=True).click()
+        self.assertTrue(self.httpd.action_started.wait(2))
+        self.assertFalse(self.page.get_by_role("button", name="Alt-Enter", exact=True).is_enabled())
+        self.choose("p1")
+        self.page.locator("#dock-input").fill("new unsent ui draft")
+        with self.page.expect_response("**/api/action/followup"):
+            self.httpd.action_release.set()
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "original api follow-up"})
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "new unsent ui draft")
+        self.assertEqual(len(self.httpd.actions), 1)
+        self.choose("p2")
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "")
+
+    def test_csrf_refresh_failure_keeps_draft_and_does_not_retry_action(self):
+        self.open()
+        self.httpd.csrf_token = "fictional-restarted-token"
+        self.httpd.fail_page = True
+        self.page.locator("#dock-input").fill("keep after refresh failure")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.get_by_text("Could not refresh the session.", exact=False).wait_for()
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "keep after refresh failure")
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_other_forbidden_response_is_not_retried(self):
+        self.open()
+        self.httpd.deny_action = True
+        self.page.locator("#dock-input").fill("keep forbidden draft")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.get_by_text("client not allowed", exact=True).wait_for()
+        self.assertEqual(self.httpd.page_reads, 1)
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(self.httpd.actions, [])
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "keep forbidden draft")
+
+    def test_action_failure_after_execution_is_never_retried(self):
+        self.open()
+        self.httpd.fail_action = True
+        self.page.locator("#dock-input").fill("do not duplicate")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.get_by_text("Fixture action failed", exact=True).wait_for()
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(len(self.httpd.actions), 1)
+        self.assertEqual(self.httpd.page_reads, 1)
+
+    def test_csrf_retry_is_bounded_when_token_rotates_again(self):
+        self.open()
+        self.httpd.csrf_token = "fictional-restarted-token"
+        self.page.route(self.base + "/", lambda route: route.fulfill(status=200, content_type="text/html", body='<meta name="csrf-token" content="fictional-already-obsolete">'))
+        self.page.locator("#dock-input").fill("keep if second retry rejected")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.get_by_text("missing or bad CSRF token", exact=True).wait_for()
+        self.assertEqual(self.httpd.post_attempts, 2)
+        self.assertEqual(self.httpd.actions, [])
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "keep if second retry rejected")
+
+    def test_missing_refresh_token_does_not_retry_action(self):
+        self.open()
+        self.httpd.csrf_token = "fictional-restarted-token"
+        self.page.route(self.base + "/", lambda route: route.fulfill(status=200, content_type="text/html", body="<html>No session token</html>"))
+        self.page.locator("#dock-input").fill("keep missing token draft")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.get_by_text("Could not refresh the session.", exact=False).wait_for()
+        self.assertEqual(self.httpd.post_attempts, 1)
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_csrf_refresh_keeps_original_pane_and_new_draft(self):
+        self.open()
+        self.httpd.csrf_token = "fictional-restarted-token"
+        pending = []
+        self.page.route(self.base + "/", lambda route: pending.append(route))
+        self.page.locator("#dock-input").fill("send only to api")
+        self.page.locator('#dock-form button[type="submit"]').click()
+        self.page.wait_for_function("document.querySelector('#dock-input').value !== ''")
+        self.choose("p1")
+        self.page.locator("#dock-input").fill("new unsent ui draft")
+        self.assertEqual(len(pending), 1)
+        with self.page.expect_response("**/api/action/prompt"):
+            pending[0].fulfill(status=200, content_type="text/html", body='<meta name="csrf-token" content="fictional-restarted-token">')
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "text": "send only to api"})
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "new unsent ui draft")
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "ui-agent")
+
+    def test_concurrent_stale_actions_share_one_token_refresh(self):
+        self.open()
+        self.httpd.csrf_token = "fictional-restarted-token"
+        refreshes = []
+        def refresh(route):
+            refreshes.append(True)
+            route.fulfill(status=200, content_type="text/html", body='<meta name="csrf-token" content="fictional-restarted-token">')
+        self.page.route(self.base + "/", refresh)
+        self.page.evaluate("Promise.all([act('keys',{pane:'p2',keys:['enter']}),act('keys',{pane:'p2',keys:['alt+enter']})])")
+        self.assertEqual(len(refreshes), 1)
+        self.assertEqual(len(self.httpd.actions), 2)
+        self.assertTrue(all(action[2] == "fictional-restarted-token" for action in self.httpd.actions))
+
     def test_inflight_send_does_not_clear_new_pane_draft(self):
         self.open()
         self.httpd.delay_action = True
@@ -659,6 +849,40 @@ class PhoneUITest(unittest.TestCase):
             self.page.get_by_role("button", name="Show all agents").click()
             self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
             self.page.get_by_role("button", name="Return to focused pane").click()
+
+
+class RealBridgeUITest(unittest.TestCase):
+    def test_followup_with_plain_cli_acknowledgement_and_token_rotation(self):
+        from unittest.mock import patch
+        import test_server
+        bridge = test_server.server
+        test_server.LOG.write_text("")
+        with patch.object(bridge, "HERDR", str(test_server.FAKE)), patch.object(bridge, "TOKEN", "fictional-initial-token"):
+            bridge.invalidate()
+            httpd = bridge.make_server(0)
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            try:
+                with sync_playwright() as playwright:
+                    browser = playwright.chromium.launch(channel="chrome", headless=True)
+                    try:
+                        page = browser.new_page(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
+                        page.goto(f"http://127.0.0.1:{httpd.server_port}/")
+                        page.locator("#dock.open").wait_for()
+                        bridge.TOKEN = "fictional-rotated-token"
+                        page.locator("#dock-input").fill("browser follow-up, not a bare key")
+                        with page.expect_response(lambda response: response.url.endswith('/api/action/followup') and response.status == 200):
+                            page.get_by_role("button", name="Alt-Enter", exact=True).click()
+                        self.assertEqual(page.locator("#dock-input").input_value(), "")
+                        calls = [json.loads(line) for line in test_server.LOG.read_text().splitlines()]
+                        inputs = [call for call in calls if call[:2] in (["pane", "send-text"], ["pane", "send-keys"])]
+                        self.assertEqual(inputs, [["pane", "send-text", "w1:p1", "browser follow-up, not a bare key"], ["pane", "send-keys", "w1:p1", "alt+enter"]])
+                        self.assertEqual(page.locator("#toasts .err").count(), 0)
+                    finally:
+                        browser.close()
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                bridge.invalidate()
 
 
 if __name__ == "__main__":

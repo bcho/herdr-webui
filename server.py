@@ -105,7 +105,7 @@ def invalidate() -> None:
 # ------------------------------------------------------------------ validate
 def need_id(body: dict, key: str) -> str:
     value = str(body.get(key) or "")
-    if not ID_RE.match(value):
+    if not ID_RE.fullmatch(value):
         raise BridgeError(f"invalid {key}", 400)
     return value
 
@@ -144,9 +144,21 @@ def act_send(b):
 def act_keys(b):
     pane = need_id(b, "pane")
     keys = b.get("keys")
-    if not isinstance(keys, list) or not 0 < len(keys) <= 16 or not all(isinstance(k, str) and KEY_RE.match(k) for k in keys):
+    if not isinstance(keys, list) or not 0 < len(keys) <= 16 or not all(isinstance(k, str) and KEY_RE.fullmatch(k) for k in keys):
         raise BridgeError("invalid keys", 400)
-    herdr(["pane", "send-keys", pane, *keys])
+    herdr(["pane", "send-keys", pane, *keys], parse=False)
+    return {"ok": True}
+
+
+def act_followup(b):
+    """Type the browser draft, then submit Alt-Enter to the same explicit pane."""
+    pane = need_id(b, "pane")
+    text = need_text(b, "text")
+    try:
+        herdr(["pane", "send-text", pane, text], parse=False)
+        herdr(["pane", "send-keys", pane, "alt+enter"], parse=False)
+    except BridgeError as error:
+        raise BridgeError("Follow-up delivery failed. Text may already be in the terminal; inspect it before retrying.", error.status) from error
     return {"ok": True}
 
 
@@ -187,14 +199,14 @@ def act_spawn(b):
         if kind not in KINDS or not pane:
             raise BridgeError("invalid agent kind", 400)
         name = str(b.get("name") or kind)
-        if not ID_RE.match(name):
+        if not ID_RE.fullmatch(name):
             raise BridgeError("invalid agent name", 400)
         herdr(["agent", "start", name, "--kind", kind, "--pane", pane, "--timeout", "30000"])
     return {"pane_id": pane, "tab_id": (res.get("tab") or {}).get("tab_id"),
             "workspace_id": (res.get("root_pane") or {}).get("workspace_id")}
 
 
-ACTIONS = {"send": act_send, "keys": act_keys, "prompt": act_prompt, "focus": act_focus,
+ACTIONS = {"send": act_send, "keys": act_keys, "followup": act_followup, "prompt": act_prompt, "focus": act_focus,
            "split": act_split, "close": act_close, "spawn": act_spawn}
 
 
@@ -206,8 +218,12 @@ CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline
 class Handler(BaseHTTPRequestHandler):
     server_version = "herdr-webui/0.1"
 
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(self.server.request_timeout)
+
     def log_message(self, fmt, *args):
-        if self.command != "GET":
+        if getattr(self, "command", "GET") != "GET":
             super().log_message(fmt, *args)
 
     def _send(self, status: int, body: bytes, ctype: str):
@@ -277,17 +293,23 @@ class Handler(BaseHTTPRequestHandler):
         if not self._client_ok():
             return self._json(403, {"error": "client not allowed"})
         if not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), TOKEN):
-            return self._json(403, {"error": "missing or bad CSRF token"})
+            return self._json(403, {"error": "missing or bad CSRF token", "code": "csrf_invalid"})
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self._json(415, {"error": "expected application/json"})
         action = ACTIONS.get(urlparse(self.path).path.removeprefix("/api/action/"))
         if not action:
             return self._json(404, {"error": "unknown action"})
         try:
-            length = int(self.headers.get("Content-Length") or 0)
+            lengths = self.headers.get_all("Content-Length", [])
+            if self.headers.get_all("Transfer-Encoding") or len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
+                raise BridgeError("invalid request framing", 400)
+            length = int(lengths[0])
             if length > 64_000:
                 raise BridgeError("body too large", 413)
-            body = json.loads(self.rfile.read(length) or b"{}")
+            raw = self.rfile.read(length)
+            if len(raw) != length:
+                raise BridgeError("incomplete request body", 400)
+            body = json.loads(raw or b"{}")
             if not isinstance(body, dict):
                 raise BridgeError("expected object", 400)
             result = action(body)
@@ -295,6 +317,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"ok": True, "result": result})
         except BridgeError as e:
             return self._json(e.status, {"error": str(e)})
+        except socket.timeout:
+            return self._json(408, {"error": "request body timed out"})
         except ValueError:
             return self._json(400, {"error": "bad request"})
 
@@ -304,6 +328,7 @@ def make_server(port: int, allowed_hosts=(), allowed_client_ips=()) -> Threading
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     httpd.allowed_hosts = frozenset({"127.0.0.1", "localhost", *(h.lower() for h in allowed_hosts)})
     httpd.allowed_client_ips = clients or None
+    httpd.request_timeout = 10.0
     return httpd
 
 

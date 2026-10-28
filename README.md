@@ -17,7 +17,7 @@ output and direct agent interaction from the browser.
 - Inspector dock: full-color (ANSI) terminal view, then
   - **Prompt agent** (`herdr agent prompt`),
   - **Type + Enter** (`herdr pane run`, atomic — safe for blocked approval prompts),
-  - **Type only**, and one-click keys (Enter, Esc, Ctrl-C, arrows, y/n, 1/2/3…).
+  - **Type only**, and one-click keys (Enter, Alt-Enter, Esc, Ctrl-C, arrows, y/n, 1/2/3…).
 - Launch a new space or tab, optionally starting an agent (`pi`, `claude`, `codex`, …) — without stealing TUI focus.
 - Split / close panes, focus a pane in the Herdr TUI, filter (⌘K), `#pane=<id>` deep links.
 - Phone layout (900px wide and below): one focused terminal, hamburger navigation,
@@ -39,6 +39,12 @@ output and direct agent interaction from the browser.
   Selecting a pane does not open the phone keyboard or send a command.
 - Input modes remain **Prompt agent**, **Type + Enter**, and **Type only**.
   Blocked agents default to **Type + Enter** so approval replies reach the terminal.
+- **Alt-Enter**, beside Enter, sends the WebUI message text to the selected pane
+  and then presses Alt-Enter for agents that support follow-up submission. It
+  does not send a bare key when the browser draft is empty. A successful send
+  clears only that draft. Like other raw typing, it appends to any existing
+  terminal input; use a separate pane if the TUI is being edited elsewhere.
+  If delivery fails midway, inspect the terminal before retrying to avoid duplicates.
 - **···** contains **Close pane**, **Ctrl-C ×2**, refresh, ANSI color, and the
   explicit **Focus in Herdr** action. Close asks for confirmation and removes
   the focused terminal, killing any agent inside it. To close another pane,
@@ -49,7 +55,10 @@ output and direct agent interaction from the browser.
 - Normal navigation never changes the TUI's focus. Use **New session** in the
   navigation drawer to launch a session.
 - Terminal output scrolls independently; viewport sizing follows the on-screen
-  keyboard. Refresh the page after updating/restarting the service.
+  keyboard. After a service restart, an explicitly rejected stale security token
+  is refreshed automatically and the original action is retried once. Other
+  errors are not retried; unsuccessful sends keep your text. Refresh the page
+  after an update to load new UI features.
 
 ## Run
 
@@ -177,6 +186,12 @@ This UI can type into your terminals, so it is deliberately loopback-bound:
 - Herdr is invoked with argv lists (never a shell); IDs, key names, labels, and agent kinds are allow-listed.
 - Strict CSP (no external origins), `X-Frame-Options: DENY`, `no-store`.
 - Agent session file paths from the snapshot are never sent to the browser.
+- Socket reads have a 10-second idle timeout; mutation bodies require an
+  unambiguous nonnegative Content-Length, reject transfer encodings, and are
+  capped at 64 KB.
+
+See [the security review](docs/security-review.md) for verified fixes, CVE
+applicability, and residual risks; this is not a public-service security boundary.
 
 Do not bind it to a public or LAN interface. Use the private proxy above or an
 SSH tunnel: `ssh -L 8780:127.0.0.1:8780 host`. `--allow-host` does not add
@@ -192,6 +207,7 @@ not a password or a tailnet firewall rule.
 | GET | `/api/read?pane=ID&lines=N&ansi=1` | `pane read --source recent-unwrapped` |
 | POST | `/api/action/send` `{pane,text,enter}` | `pane run` / `pane send-text` |
 | POST | `/api/action/keys` `{pane,keys[]}` | `pane send-keys` |
+| POST | `/api/action/followup` `{pane,text}` | `pane send-text`, then `pane send-keys alt+enter` |
 | POST | `/api/action/prompt` `{pane,text}` | `agent prompt` |
 | POST | `/api/action/focus` `{pane,tab,agent}` | `agent focus` / `tab focus` |
 | POST | `/api/action/split` `{pane,direction}` | `pane split --no-focus` |

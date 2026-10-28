@@ -2,6 +2,7 @@
 import http.client
 import json
 import os
+import socket
 import stat
 import sys
 import tempfile
@@ -30,6 +31,12 @@ if args[:2] == ["api", "snapshot"]:
                      "panes": [{{"pane_id": "w1:p1", "rect": {{"x": 0, "y": 0, "width": 10, "height": 10}}}}]}}]}}}}}}))
 elif args[:2] == ["pane", "read"]:
     print("hello \\x1b[31mred\\x1b[0m")
+elif args[:2] == ["pane", "send-text"] and args[3] == "fixture-type-failure":
+    print("fixture type failed", file=sys.stderr); sys.exit(1)
+elif args[:2] == ["pane", "send-keys"] and args[2] == "w8:p8":
+    print("fixture key failed", file=sys.stderr); sys.exit(1)
+elif args[:2] in (["pane", "send-keys"], ["pane", "send-text"]):
+    print("ok")
 elif args[:2] == ["workspace", "create"]:
     print(json.dumps({{"result": {{"root_pane": {{"pane_id": "w2:p1", "workspace_id": "w2"}}, "tab": {{"tab_id": "w2:t1"}}}}}}))
 elif args[:2] == ["pane", "close"] and args[2] == "w9:p9":
@@ -81,6 +88,87 @@ class ServerTest(unittest.TestCase):
         self.assertIn(server.TOKEN.encode(), body)
         self.assertNotIn(b"__CSRF_TOKEN__", body)
 
+    def test_identifiers_and_keys_reject_trailing_newlines(self):
+        self.assertEqual(self.req("/api/action/close", {"pane": "w1:p1\n"})[0], 400)
+        self.assertEqual(self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["ctrl+c\n"]})[0], 400)
+        self.assertEqual(self.calls(), [])
+
+    def test_security_response_headers_and_no_cors(self):
+        with urllib.request.urlopen(self.base + "/") as response:
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+            self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+            self.assertNotIn("Access-Control-Allow-Origin", response.headers)
+
+    def test_rejects_ambiguous_or_negative_request_lengths(self):
+        for lengths, transfer in ((["-1"], None), (["+1"], None), (["1", "1"], None), (["0"], "chunked"), ([], None), (["64001"], None)):
+            conn = http.client.HTTPConnection(*self.httpd.server_address, timeout=2)
+            try:
+                conn.putrequest("POST", "/api/action/send")
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("X-CSRF-Token", server.TOKEN)
+                for length in lengths:
+                    conn.putheader("Content-Length", length)
+                if transfer:
+                    conn.putheader("Transfer-Encoding", transfer)
+                conn.endheaders()
+                response = conn.getresponse()
+                self.assertEqual(response.status, 413 if lengths == ["64001"] else 400)
+                response.read()
+            finally:
+                conn.close()
+        self.assertEqual(self.calls(), [])
+
+    def test_body_timeout_handles_distinct_legacy_socket_exception(self):
+        from email.message import Message
+        from unittest.mock import patch
+        class LegacySocketTimeout(OSError):
+            pass
+        class SlowBody:
+            def read(self, _):
+                raise LegacySocketTimeout()
+        handler = object.__new__(server.Handler)
+        handler.path = "/api/action/send"
+        handler.headers = Message()
+        handler.headers["Content-Type"] = "application/json"
+        handler.headers["Content-Length"] = "10"
+        handler.headers["X-CSRF-Token"] = server.TOKEN
+        handler.rfile = SlowBody()
+        handler._host_ok = handler._client_ok = lambda: True
+        responses = []
+        handler._json = lambda status, body: responses.append((status, body))
+        with patch.object(server.socket, "timeout", LegacySocketTimeout):
+            handler.do_POST()
+        self.assertEqual(responses, [(408, {"error": "request body timed out"})])
+        self.assertEqual(self.calls(), [])
+
+    def test_slow_headers_and_bodies_have_bounded_lifetime(self):
+        httpd = server.make_server(0)
+        httpd.request_timeout = 0.1
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        try:
+            with socket.create_connection(httpd.server_address, timeout=2) as conn:
+                conn.settimeout(2)
+                conn.sendall(b"GET / HTTP/1.1\\r\\nHost: localhost\\r\\nX-Incomplete: ")
+                self.assertEqual(conn.recv(1024), b"")
+            conn = http.client.HTTPConnection(*httpd.server_address, timeout=2)
+            try:
+                conn.putrequest("POST", "/api/action/send")
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("X-CSRF-Token", server.TOKEN)
+                conn.putheader("Content-Length", "10")
+                conn.endheaders(b"{")
+                response = conn.getresponse()
+                self.assertEqual(response.status, 408)
+                response.read()
+            finally:
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+        self.assertEqual(self.calls(), [])
+
     def test_tree_is_normalized_and_hides_session_paths(self):
         status, body = self.req("/api/tree")
         tree = json.loads(body)
@@ -109,6 +197,37 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["ctrl+c"]})[0], 200)
         self.assertEqual(self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["--json"]})[0], 400)
         self.assertEqual(self.req("/api/action/keys", {"pane": "w1:p1", "keys": "enter"})[0], 400)
+
+    def test_followup_types_text_before_alt_enter_with_plain_cli_output(self):
+        status, body = self.req("/api/action/followup", {"pane": "w1:p1", "text": "WebUI draft"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self.calls(), [["pane", "send-text", "w1:p1", "WebUI draft"], ["pane", "send-keys", "w1:p1", "alt+enter"]])
+
+    def test_followup_rejects_empty_text_before_any_terminal_input(self):
+        self.assertEqual(self.req("/api/action/followup", {"pane": "w1:p1", "text": ""})[0], 400)
+        self.assertEqual(self.calls(), [])
+
+    def test_followup_failure_is_not_replayed_and_warns_about_partial_delivery(self):
+        status, body = self.req("/api/action/followup", {"pane": "w1:p1", "text": "fixture-type-failure"})
+        self.assertEqual(status, 502)
+        self.assertIn("inspect it before retrying", json.loads(body)["error"])
+        self.assertEqual(self.calls(), [["pane", "send-text", "w1:p1", "fixture-type-failure"]])
+        LOG.write_text("")
+        status, body = self.req("/api/action/followup", {"pane": "w8:p8", "text": "WebUI draft"})
+        self.assertEqual(status, 502)
+        self.assertIn("Text may already be in the terminal", json.loads(body)["error"])
+        self.assertEqual(self.calls(), [["pane", "send-text", "w8:p8", "WebUI draft"], ["pane", "send-keys", "w8:p8", "alt+enter"]])
+
+    def test_alt_enter_passes_literal_key(self):
+        status, _ = self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["alt+enter"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls(), [["pane", "send-keys", "w1:p1", "alt+enter"]])
+
+    def test_csrf_rejection_is_identifiable_and_runs_no_action(self):
+        status, body = self.req("/api/action/send", {"pane": "w1:p1", "text": "fixture only"}, token="stale")
+        self.assertEqual(status, 403)
+        self.assertEqual(json.loads(body), {"error": "missing or bad CSRF token", "code": "csrf_invalid"})
+        self.assertEqual(self.calls(), [])
 
     def test_double_interrupt_keeps_both_keys_and_never_closes(self):
         status, _ = self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["ctrl+c", "ctrl+c"]})
@@ -215,7 +334,9 @@ class RestrictedClientTest(unittest.TestCase):
                 status, body = self.req(path, forwarded=forwarded)
                 self.assertEqual(status, 403, (path, forwarded))
                 self.assertNotIn(server.TOKEN.encode(), body)
-            self.assertEqual(self.req("/api/action/spawn", method="POST", forwarded=forwarded)[0], 403)
+            status, body = self.req("/api/action/spawn", method="POST", forwarded=forwarded)
+            self.assertEqual(status, 403)
+            self.assertNotIn(b"csrf_invalid", body)
         self.assertEqual(LOG.read_text(), "")
 
     def test_direct_loopback_remains_accessible(self):

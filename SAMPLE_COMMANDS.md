@@ -51,6 +51,9 @@ without sending input.
 Use **··· → Close pane** for confirmed removal, or **Ctrl-C ×2** to send two
 interrupts without removing the terminal. These controls affect the selected pane;
 only test them on a session you intend to interrupt or close.
+**Alt-Enter** sends the WebUI draft followed by Alt-Enter to the selected pane;
+it requires a nonempty browser draft and clears it only after success. If delivery
+fails, inspect the terminal before retrying because text may already be present.
 Check that tapping the composer opens the keyboard while keeping input visible.
 Safari's Share > Add to Home Screen makes a convenient shortcut.
 
@@ -68,5 +71,5 @@ python3 -m unittest test_ui -v
 | API returns Herdr unavailable | Start Herdr under the same macOS user; verify `HERDR_BIN` in the LaunchAgent. |
 | iPhone cannot connect | Connect both devices to the same tailnet, check tailnet access rules, and keep the Mac awake. |
 | HTTP 403 for the whole page | Use localhost directly or the allowed phone through Serve; verify its current IPs match the LaunchAgent. |
-| HTTP 403 only on mutations after a restart | Reload the page to obtain the new per-process CSRF token. |
+| HTTP 403 only on mutations after a restart | Current UI refreshes a rejected stale token automatically once; if still failing, reload. Unsent text is preserved while handling errors. |
 | Browser tests cannot start | Use an existing Playwright Python/Google Chrome environment; these are optional test tools, not application dependencies. |

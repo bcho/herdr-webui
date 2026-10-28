@@ -344,7 +344,8 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
 
 <script>
 "use strict";
-const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+let CSRF = document.querySelector('meta[name="csrf-token"]').content;
+let csrfRefresh = null;
 const $ = id => document.getElementById(id);
 const STATUSES = ["working","blocked","done","idle","unknown"];
 const STATUS_COLOR = {working:"var(--cyan)",blocked:"var(--amber)",done:"var(--green)",idle:"#5f8f74",unknown:"var(--fg3)"};
@@ -360,15 +361,38 @@ const phone = matchMedia("(max-width:900px)");
 let mobileView = null, mobileSelected = false, autoMobileDock = false, agentStateFilter = null;
 const drafts = new Map();
 const closingPanes = new Set();
-let interruptBusy = false;
+let interruptBusy = false, submitBusy = false;
 
 /* ---------------- utils ---------------- */
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(msg, kind="ok"){const t=document.createElement("div");t.className="toast "+kind;t.textContent=msg;$("toasts").append(t);setTimeout(()=>t.remove(),kind==="err"?6000:2600);}
 async function getJSON(url){const r=await fetch(url,{cache:"no-store"});const d=await r.json().catch(()=>({error:r.statusText}));if(!r.ok)throw new Error(d.error||r.statusText);return d;}
+async function refreshCSRF(){
+  if(!csrfRefresh)csrfRefresh=(async()=>{
+    const r=await fetch("/",{cache:"no-store",redirect:"error"});
+    if(!r.ok)throw new Error("Could not refresh the session. Your text is preserved; try again or reload the page.");
+    const page=new DOMParser().parseFromString(await r.text(),"text/html"),token=page.querySelector('meta[name="csrf-token"]')?.content;
+    if(!token||token==="__"+"CSRF_TOKEN__")throw new Error("Could not refresh the session. Your text is preserved; reload the page.");
+    CSRF=token;
+  })().finally(()=>{csrfRefresh=null;});
+  return csrfRefresh;
+}
 async function act(name, body){
-  const r=await fetch("/api/action/"+name,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":CSRF},body:JSON.stringify(body)});
-  const d=await r.json().catch(()=>({error:r.statusText}));if(!r.ok)throw new Error(d.error||r.statusText);return d.result;
+  const payload=JSON.stringify(body);
+  for(let attempt=0;attempt<2;attempt++){
+    const token=CSRF;
+    const r=await fetch("/api/action/"+name,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":token},body:payload});
+    let d;
+    try{d=await r.json();}catch(e){if(r.ok)throw new Error("Could not confirm delivery: the server response was incomplete.");d={error:r.statusText};}
+    // Only this pre-action rejection guarantees that retrying cannot duplicate a command.
+    if(attempt===0&&r.status===403&&d.code==="csrf_invalid"){
+      if(CSRF===token)await refreshCSRF();
+      continue;
+    }
+    if(!r.ok)throw new Error(d.error||r.statusText);
+    if(d?.ok!==true||!("result" in d))throw new Error("Could not confirm delivery: the server response was invalid.");
+    return d.result;
+  }
 }
 const paneName = p => p.label || p.terminal_title_stripped || (p.agent ? p.agent : "shell");
 const st = x => STATUSES.includes(x) ? x : "unknown";
@@ -708,20 +732,24 @@ $("canvas").addEventListener("click",async e=>{
 $("dock-close").onclick=closeDock;
 $("dock-ansi").onchange=()=>{$("mobile-color").checked=$("dock-ansi").checked;pollDock();};
 $("dock-focus").onclick=async()=>{const p=getPane(S.pane);if(!p)return;try{await act("focus",{pane:p.pane_id,tab:p.tab_id,agent:!!p.agent});toast("focused in Herdr TUI");refreshTree();}catch(x){toast(x.message,"err");}};
-const KEYS=[["Enter","enter"],["Esc","esc"],["Ctrl-C","ctrl+c"],["Tab","tab"],["↑","up"],["↓","down"],["←","left"],["→","right"],["y","y"],["n","n"],["1","1"],["2","2"],["3","3"],["Ctrl-D","ctrl+d"],["Ctrl-L","ctrl+l"]];
+const KEYS=[["Enter","enter"],["Alt-Enter","alt+enter"],["Esc","esc"],["Ctrl-C","ctrl+c"],["Tab","tab"],["↑","up"],["↓","down"],["←","left"],["→","right"],["y","y"],["n","n"],["1","1"],["2","2"],["3","3"],["Ctrl-D","ctrl+d"],["Ctrl-L","ctrl+l"]];
 $("dock-keys").innerHTML='<span class="hint" style="align-self:center;margin-right:4px">keys:</span>'+KEYS.map(([l,k])=>`<button class="btn" data-key="${esc(k)}">${esc(l)}</button>${k==="ctrl+c"?'<button class="btn mobile-key" data-interrupt-twice title="Send Ctrl-C twice without closing the pane">Ctrl-C ×2</button>':""}`).join("");
-$("dock-keys").addEventListener("click",async e=>{const twice=e.target.closest("[data-interrupt-twice]");if(twice){await interruptTwice();return;}const b=e.target.closest("[data-key]");if(!b||!S.pane)return;try{await act("keys",{pane:S.pane,keys:[b.dataset.key]});S.dockStick=true;setTimeout(pollDock,250);}catch(x){toast(x.message,"err");}});
-$("dock-input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("dock-form").requestSubmit();}});
+$("dock-keys").addEventListener("click",async e=>{const twice=e.target.closest("[data-interrupt-twice]");if(twice){await interruptTwice();return;}const b=e.target.closest("[data-key]");if(!b||!S.pane)return;if(b.dataset.key==="alt+enter"){await submitDraft("followup");return;}try{await act("keys",{pane:S.pane,keys:[b.dataset.key]});S.dockStick=true;setTimeout(pollDock,250);}catch(x){toast(x.message,"err");}});
+$("dock-input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();if(e.altKey)submitDraft("followup");else $("dock-form").requestSubmit();}});
 $("dock-input").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,140)+"px";});
-$("dock-form").addEventListener("submit",async e=>{
-  e.preventDefault();const inp=$("dock-input"),text=inp.value,mode=$("dock-mode").value,pane=S.pane;if(!pane||(!text&&mode!=="send"))return;
+async function submitDraft(mode){
+  const inp=$("dock-input"),text=inp.value,pane=S.pane;if(!pane||submitBusy)return;
+  if(!text&&mode!=="send"){if(mode==="followup")toast("Type a message in the WebUI before using Alt-Enter.","err");return;}
+  submitBusy=true;const send=$("dock-form").querySelector('[type="submit"]'),alt=$("dock-keys").querySelector('[data-key="alt+enter"]');send.disabled=alt.disabled=true;
   try{
-    if(mode==="prompt")await act("prompt",{pane,text});
+    if(mode==="prompt"||mode==="followup")await act(mode,{pane,text});
     else await act("send",{pane,text,enter:mode==="send"});
     const draft=drafts.get(pane);if(draft?.text===text)drafts.delete(pane);
     if(S.pane===pane&&inp.value===text){inp.value="";inp.style.height="auto";}S.dockStick=true;setTimeout(pollDock,300);setTimeout(refreshTree,600);
-  }catch(x){toast(x.message,"err");}
-});
+  }catch(x){toast(mode==="followup"?`${x.message} Text may already be in the terminal; inspect it before retrying.`:x.message,"err");}
+  finally{submitBusy=false;send.disabled=alt.disabled=false;}
+}
+$("dock-form").addEventListener("submit",e=>{e.preventDefault();submitDraft($("dock-mode").value);});
 // dock resize
 $("dock-resize").addEventListener("mousedown",e=>{e.preventDefault();const startY=e.clientY,startH=$("dock").offsetHeight;
   const mv=ev=>{$("dock").style.height=Math.max(160,Math.min(window.innerHeight-160,startH+startY-ev.clientY))+"px";};
