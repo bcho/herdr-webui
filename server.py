@@ -7,6 +7,7 @@ per-process CSRF token that is only embedded in the served page.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -226,9 +227,28 @@ class Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").split(":", 1)[0].lower()
         return host in self.server.allowed_hosts
 
+    def _client_ok(self) -> bool:
+        allowed = self.server.allowed_client_ips
+        if allowed is None:
+            return True
+        # Trust only the single source address overwritten by local Tailscale Serve.
+        forwarded = self.headers.get_all("X-Forwarded-For", [])
+        if not ipaddress.ip_address(self.client_address[0]).is_loopback:
+            return False
+        if not forwarded:
+            return True  # Direct localhost testing; Serve always supplies a source address.
+        if len(forwarded) != 1:
+            return False
+        try:
+            return ipaddress.ip_address(forwarded[0]) in allowed
+        except ValueError:
+            return False
+
     def do_GET(self):
         if not self._host_ok():
             return self._json(421, {"error": "bad host"})
+        if not self._client_ok():
+            return self._json(403, {"error": "client not allowed"})
         url = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(url.query).items()}
         try:
@@ -254,6 +274,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._host_ok():
             return self._json(421, {"error": "bad host"})
+        if not self._client_ok():
+            return self._json(403, {"error": "client not allowed"})
         if not secrets.compare_digest(self.headers.get("X-CSRF-Token", ""), TOKEN):
             return self._json(403, {"error": "missing or bad CSRF token"})
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
@@ -277,9 +299,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "bad request"})
 
 
-def make_server(port: int, allowed_hosts=()) -> ThreadingHTTPServer:
+def make_server(port: int, allowed_hosts=(), allowed_client_ips=()) -> ThreadingHTTPServer:
+    clients = frozenset(ipaddress.ip_address(ip) for ip in allowed_client_ips)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     httpd.allowed_hosts = frozenset({"127.0.0.1", "localhost", *(h.lower() for h in allowed_hosts)})
+    httpd.allowed_client_ips = clients or None
     return httpd
 
 
@@ -288,8 +312,10 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8780")))
     ap.add_argument("--allow-host", action="append", default=[], metavar="HOSTNAME",
                     help="additional exact Host hostname for a trusted private reverse proxy (repeatable)")
+    ap.add_argument("--allow-client-ip", action="append", default=[], type=ipaddress.ip_address, metavar="IP",
+                    help="allow only these exact Tailscale client IPs via local Serve, plus direct localhost (repeatable)")
     args = ap.parse_args()
-    httpd = make_server(args.port, args.allow_host)
+    httpd = make_server(args.port, args.allow_host, args.allow_client_ip)
     print(f"Herdr web UI: http://127.0.0.1:{args.port}", flush=True)
     try:
         httpd.serve_forever()

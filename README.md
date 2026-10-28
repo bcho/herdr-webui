@@ -47,6 +47,55 @@ in Safari. Only devices allowed by your tailnet policy can connect; anyone with
 access to this endpoint can read and control your local terminals. Do not enable
 Funnel or forward a public port. The backend still listens only on loopback.
 
+### Restrict access to one device
+
+Use `--allow-client-ip` once for each of the device's exact Tailscale IPv4/IPv6
+addresses. When configured, **every proxied** page, API read, and mutation
+requires an allowed source address. Malformed, duplicate, and unlisted source
+addresses are denied. Direct localhost requests without proxy headers remain
+accessible for local testing, with the usual Host and CSRF guards.
+
+For an installed macOS service, replace `phone.example.ts.net` below with the
+phone's MagicDNS name (listed in `tailscale status --json`):
+
+```bash
+(
+set -e
+# Disable remote serving before changing the restriction.
+tailscale serve --https=443 off
+python3 - phone.example.ts.net <<'PY'
+import json, plistlib, subprocess, sys
+from pathlib import Path
+peers = json.loads(subprocess.check_output(["tailscale", "status", "--json"]))["Peer"].values()
+matches = [p for p in peers if p["DNSName"].rstrip(".") == sys.argv[1].rstrip(".")]
+assert len(matches) == 1 and matches[0]["TailscaleIPs"], "Device not uniquely found"
+agent = Path.home() / "Library/LaunchAgents/dev.herdr.webui.plist"
+config = plistlib.loads(agent.read_bytes())
+args = config["ProgramArguments"]
+assert "--allow-client-ip" not in args, "Restriction already configured; inspect existing arguments"
+for ip in matches[0]["TailscaleIPs"]:
+    args.extend(["--allow-client-ip", ip])
+agent.write_bytes(plistlib.dumps(config))
+PY
+launchctl bootout "gui/$(id -u)/dev.herdr.webui"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/dev.herdr.webui.plist"
+tailscale serve --bg --https=443 http://127.0.0.1:8780
+)
+```
+
+If setup fails, remote serving stays disabled; correct the error before retrying.
+
+This mode trusts **only a local Tailscale Serve proxy** that overwrites
+`X-Forwarded-For` with the authenticated connection's source IP on every request.
+A request without that header is treated as direct localhost traffic. Do not put
+an arbitrary proxy in front of it. Remote clients cannot bypass the check by
+supplying that header: Serve replaces it. Local processes on the host remain
+trusted and could forge proxy headers; this is not isolation from the host
+owner. Other tailnet devices receive HTTP 403 rather than the UI. Their ability
+to discover the machine or connect to its HTTPS port is unchanged; network-level
+invisibility requires separate tailnet policy rules. Re-enrolling the phone can
+change its IPs and requires updating the allowlist.
+
 ### macOS service
 
 From this repository, create a per-user LaunchAgent using existing Python,
@@ -102,6 +151,8 @@ This UI can type into your terminals, so it is deliberately loopback-bound:
 Do not bind it to a public or LAN interface. Use the private proxy above or an
 SSH tunnel: `ssh -L 8780:127.0.0.1:8780 host`. `--allow-host` does not add
 application authentication; use it only behind a trusted private proxy.
+`--allow-client-ip` adds an optional exact-device restriction at the HTTP layer,
+not a password or a tailnet firewall rule.
 
 ## API
 

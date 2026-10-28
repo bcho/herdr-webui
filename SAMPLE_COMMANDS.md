@@ -21,7 +21,7 @@ launchctl print "gui/$(id -u)/dev.herdr.webui"
 
 ```bash
 curl --fail --silent --show-error --max-time 25 http://127.0.0.1:8780/api/tree | python3 -c 'import json,sys; p=json.load(sys.stdin); print("spaces:", len(p["workspaces"]), "panes:", len(p["panes"]))'
-# Expect: space and pane counts matching the local Herdr server.
+# Expect: space and pane counts matching the local Herdr server, including with --allow-client-ip.
 ```
 
 4. Check private HTTPS routing.
@@ -53,4 +53,5 @@ Add to Home Screen makes a convenient shortcut.
 | HTTP 421 / bad host | Ensure the LaunchAgent's `--allow-host` exactly matches Serve's hostname; restart. |
 | API returns Herdr unavailable | Start Herdr under the same macOS user; verify `HERDR_BIN` in the LaunchAgent. |
 | iPhone cannot connect | Connect both devices to the same tailnet, check tailnet access rules, and keep the Mac awake. |
-| HTTP 403 after a restart | Reload the page to obtain the new per-process CSRF token. |
+| HTTP 403 for the whole page | Use localhost directly or the allowed phone through Serve; verify its current IPs match the LaunchAgent. |
+| HTTP 403 only on mutations after a restart | Reload the page to obtain the new per-process CSRF token. |

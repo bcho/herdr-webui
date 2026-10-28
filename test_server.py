@@ -1,4 +1,5 @@
 """Stdlib tests for webui/server.py using a fake `herdr` executable."""
+import http.client
 import json
 import os
 import stat
@@ -52,6 +53,7 @@ class ServerTest(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.httpd.shutdown()
+        cls.httpd.server_close()
 
     def setUp(self):
         LOG.write_text("")
@@ -157,6 +159,88 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.req("/api/tree", host="evil.example:80")[0], 421)
         self.assertEqual(self.req("/api/action/nope", {})[0], 404)
         self.assertEqual(self.calls(), [])
+
+
+class RestrictedClientTest(unittest.TestCase):
+    IPV4 = "192.0.2.10"
+    IPV6 = "2001:db8::10"
+    HOST = "dashboard.example.ts.net"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.httpd = server.make_server(0, [cls.HOST], [cls.IPV4, cls.IPV6])
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def setUp(self):
+        LOG.write_text("")
+        server.invalidate()
+
+    def req(self, path="/", *, forwarded=(), method="GET", token=server.TOKEN, host=HOST):
+        conn = http.client.HTTPConnection(*self.httpd.server_address, timeout=5)
+        try:
+            conn.putrequest(method, path, skip_host=True)
+            conn.putheader("Host", host)
+            for value in forwarded:
+                conn.putheader("X-Forwarded-For", value)
+            if method == "POST":
+                conn.putheader("Content-Type", "application/json")
+                conn.putheader("X-CSRF-Token", token)
+                conn.putheader("Content-Length", "0")
+            conn.endheaders()
+            response = conn.getresponse()
+            return response.status, response.read()
+        finally:
+            conn.close()
+
+    def test_allowed_ipv4_and_ipv6_can_read(self):
+        for ip in (self.IPV4, self.IPV6, "2001:0db8:0:0:0:0:0:10"):
+            self.assertEqual(self.req(forwarded=[ip])[0], 200)
+            self.assertEqual(self.req("/api/tree", forwarded=[ip])[0], 200)
+            self.assertEqual(self.req("/api/read?pane=w1:p1", forwarded=[ip])[0], 200)
+
+    def test_denied_clients_get_no_page_or_api_and_cannot_mutate(self):
+        for forwarded in ([""], ["192.0.2.11"], ["2001:db8::11"], ["invalid"], [self.IPV4 + ", 192.0.2.11"],
+                          [self.IPV4, self.IPV4], ["192.0.2.11", self.IPV4]):
+            for path in ("/", "/api/tree", "/api/read?pane=w1:p1"):
+                status, body = self.req(path, forwarded=forwarded)
+                self.assertEqual(status, 403, (path, forwarded))
+                self.assertNotIn(server.TOKEN.encode(), body)
+            self.assertEqual(self.req("/api/action/spawn", method="POST", forwarded=forwarded)[0], 403)
+        self.assertEqual(LOG.read_text(), "")
+
+    def test_direct_loopback_remains_accessible(self):
+        for host in ("127.0.0.1:8780", "localhost:8780"):
+            self.assertEqual(self.req(host=host)[0], 200)
+            self.assertEqual(self.req("/api/tree", host=host)[0], 200)
+            self.assertEqual(self.req("/api/action/nope", method="POST", host=host)[0], 404)
+            self.assertEqual(self.req("/api/action/nope", method="POST", host=host, token="bad")[0], 403)
+
+    def test_remote_device_cannot_bypass_with_local_host(self):
+        for host in ("127.0.0.1:8780", "localhost:8780"):
+            self.assertEqual(self.req(host=host, forwarded=["192.0.2.11"])[0], 403)
+
+    def test_allowed_device_still_needs_csrf(self):
+        self.assertEqual(self.req("/api/action/nope", method="POST", forwarded=[self.IPV4], token="bad")[0], 403)
+        self.assertEqual(self.req("/api/action/nope", method="POST", forwarded=[self.IPV4])[0], 404)
+        self.assertEqual(LOG.read_text(), "")
+
+    def test_restriction_rejects_non_loopback_proxy_connection(self):
+        from email.message import Message
+        handler = object.__new__(server.Handler)
+        handler.server = self.httpd
+        handler.headers = Message()
+        handler.headers["X-Forwarded-For"] = self.IPV4
+        handler.client_address = ("192.0.2.20", 1234)
+        self.assertFalse(handler._client_ok())
+
+    def test_invalid_ip_configuration_fails_before_listening(self):
+        with self.assertRaises(ValueError):
+            server.make_server(0, allowed_client_ips=["not-an-ip"])
 
 
 if __name__ == "__main__":
