@@ -20,6 +20,27 @@ output and direct agent interaction from the browser.
   - **Type only**, and one-click keys (Enter, Esc, Ctrl-C, arrows, y/n, 1/2/3…).
 - Launch a new space or tab, optionally starting an agent (`pi`, `claude`, `codex`, …) — without stealing TUI focus.
 - Split / close panes, focus a pane in the Herdr TUI, filter (⌘K), `#pane=<id>` deep links.
+- Phone layout (900px wide and below): one focused terminal, hamburger navigation,
+  a separate all-agents view, and touch-friendly input. Desktop keeps its original layout.
+
+## Phone UI
+
+- The phone opens the focused pane, or the pane in a `#pane=<id>` deep link.
+  It keeps your browser selection when another terminal gains TUI focus.
+- **☰** opens the searchable space → tab → pane tree. Choose a pane to return
+  to its terminal; choosing a space or tab opens its focused/first pane.
+- **Agents** shows agents across every space, with blocked agents first, search,
+  and status totals. An amber indicator means an agent needs attention.
+- The message composer and horizontally scrollable terminal keys stay below the
+  output. Input drafts are kept separately per pane while the page is open.
+  Selecting a pane does not open the phone keyboard or send a command.
+- Input modes remain **Prompt agent**, **Type + Enter**, and **Type only**.
+  Blocked agents default to **Type + Enter** so approval replies reach the terminal.
+- **···** contains refresh, ANSI color, and the explicit **Focus in Herdr** action.
+  Normal navigation never changes the TUI's focus. Use **New session** in the
+  navigation drawer to launch a session.
+- Terminal output scrolls independently; viewport sizing follows the on-screen
+  keyboard. Refresh the page after updating/restarting the service.
 
 ## Run
 
@@ -173,6 +194,17 @@ not a password or a tailnet firewall rule.
 ```bash
 python3 -m unittest test_server -v   # uses a fake herdr binary; no live server needed
 ```
+
+Optional browser regressions use an **already installed** Playwright Python package
+and Google Chrome. They run against fictional sessions on an ephemeral loopback
+server and never send commands to your real Herdr server:
+
+```bash
+python3 -m unittest test_ui -v
+```
+
+No browser packages are required to run the application. Browser viewport tests
+cover responsive layout, but do not replace checking the actual phone keyboard.
 
 ## Roadmap
 

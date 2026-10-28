@@ -134,11 +134,120 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
 .toast.err{border-color:#5a2730;color:#ffb3bb}
 .toast.ok{border-color:#1f5a3d;color:#9ff0c4}
 .b{font-weight:700}.dim{opacity:.6}.it{font-style:italic}.ul{text-decoration:underline}
+/* Phone UI: the existing inspector becomes the single focused terminal. */
+[hidden]{display:none!important}
+.mobile-only,.short-only{display:none}
+.agents-view{display:none}
+@media(max-width:900px){
+  html,body{overflow:hidden;overscroll-behavior:none}
+  .app{position:fixed;top:var(--app-top,0px);left:0;width:100%;height:var(--app-height,100dvh);grid-template-rows:60px minmax(0,1fr)}
+  .desktop-header{display:none}
+  .mobile-only{display:flex}
+  .mobile-header{gap:7px;padding:0 10px}
+  .mobile-icon{width:44px;height:44px;flex:none;border:0;border-radius:9px;background:transparent;color:var(--fg2);display:grid;place-items:center;font-size:21px}
+  .mobile-title{flex:1;min-width:0}
+  .mobile-title strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 14px var(--mono)}
+  .mobile-title small{display:block;margin-top:4px;color:var(--fg3);font:10px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mobile-agents-btn{height:44px;padding:0 10px;border:1px solid var(--line2);border-radius:9px;background:var(--bg2);font-size:11px;display:flex;align-items:center;gap:6px;position:relative}
+  .mobile-agents-btn .count{font:10px var(--mono);color:var(--fg2);padding:1px 5px;border-radius:4px;background:var(--bg3)}
+  .mobile-attention-dot{position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--amber)}
+  .body,.body.nosidebar{grid-template-columns:minmax(0,1fr);position:relative;overflow:hidden}
+  main{min-height:0}
+  .tabbar,.canvas-wrap{display:none}
+  aside{display:none;position:absolute;inset:0 auto 0 0;width:calc(100% - 24px);max-width:380px;z-index:31;box-shadow:14px 0 30px #0007}
+  .nav-open aside{display:flex}
+  .nav-scrim{display:none;position:absolute;inset:0;background:#0009;border:0;z-index:30}
+  .nav-open .nav-scrim{display:block}
+  .side-h{padding:9px 10px 9px 16px;min-height:60px;gap:8px}
+  .side-h h3{font:600 17px var(--sans);letter-spacing:0;text-transform:none;color:var(--fg)}
+  .side-h .pill{margin-left:auto;font-size:9px}
+  .mobile-search{display:block;padding:12px}
+  .mobile-search input,.agents-search{width:100%;height:42px;border:1px solid var(--line2);border-radius:8px;background:var(--bg0);padding:0 11px;font-size:16px;outline:0}
+  .mobile-search input:focus,.agents-search:focus{border-color:var(--cyan)}
+  .tree{padding-top:0}
+  .node{min-height:44px;font-size:12px;gap:7px}
+  .node .chev{display:grid;place-items:center;align-self:stretch;min-width:24px}
+  .node.host{display:none}
+  .tree>.kids{margin-left:0;border-left:0;padding-left:0}
+  .kids{margin-left:9px;padding-left:3px}
+  .side-f{display:none}
+  .mobile-nav-footer{border-top:1px solid var(--line);padding:10px 12px;gap:8px;align-items:center;justify-content:space-between;font:10px var(--mono);color:var(--fg3)}
+  .mobile-nav-footer .btn{min-height:40px}
+  .mobile-context{min-height:37px;align-items:center;gap:7px;padding:0 14px;border-bottom:1px solid var(--line);font:10px var(--mono);flex:none}
+  .mobile-context .kind{color:var(--violet);border:1px solid #3b3260;border-radius:4px;padding:1px 5px}
+  .mobile-context .badge{font-size:10px;text-transform:none;letter-spacing:0}
+  .mobile-context .connection{margin-left:auto;color:var(--fg3);font-size:9px}
+  .mobile-context .mobile-icon{height:34px;width:34px;font-size:18px}
+  .mobile-actions{padding:8px 12px;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--line);background:var(--bg1)}
+  .mobile-actions .btn{min-height:40px}
+  .dock,.dock.open{flex:1;height:auto!important;min-height:0;border-top:0}
+  .dock:not(.open){display:none}
+  .dock-resize,.dock .dh{display:none}
+  .term{padding:16px 14px;font:12px/1.65 var(--mono);overscroll-behavior:contain}
+  .dock .keys{gap:6px;padding:8px 12px;flex-wrap:nowrap;overflow-x:auto;order:3;flex:none;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+  .keys .hint{display:none}
+  .keys .btn{min-height:34px;padding:0 11px;flex:none;font-size:11px}
+  .dock form{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px;padding:8px 12px;order:2;flex:none}
+  .dock form select{grid-column:1/-1;width:100%;height:34px;font-size:16px;padding:3px 6px;border:0;background:transparent;color:var(--fg2)}
+  .dock textarea{font-size:16px;line-height:20px;min-height:44px;max-height:100px;padding:11px 10px}
+  .dock form>.btn{height:44px;padding:0;font-size:11px}
+  .mobile-empty{flex:1;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:24px;gap:14px;color:var(--fg3);font:12px var(--mono)}
+  .mobile-empty .btn{min-height:44px}
+  .agents-view{position:absolute;inset:0;z-index:32;background:var(--bg0);flex-direction:column;min-height:0}
+  .agents-view.open{display:flex}
+  .agents-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);min-height:60px;flex:none;background:var(--bg1)}
+  .agents-head h2{font-size:17px;margin:0;flex:1}
+  .agents-head small{display:block;font-size:10px;color:var(--fg3);font-weight:400;margin-top:3px}
+  .agents-attention{margin:12px 14px 0;padding:10px;border:1px solid #4b3b24;border-radius:8px;background:#211c15;color:var(--amber);font-size:11px}
+  .agents-summary{display:flex;margin:14px 14px 0;padding-bottom:13px;border-bottom:1px solid var(--line);gap:8px;flex:none}
+  .agents-summary>div{flex:1}
+  .agents-summary strong{font:500 19px var(--mono);display:block}
+  .agents-summary span{font-size:9px;color:var(--fg2)}
+  .agents-search-wrap{padding:12px 14px 0;flex:none}
+  .agents-list{padding:0 14px;overflow:auto;flex:1;min-height:0}
+  .agents-section{font:9px var(--mono);letter-spacing:1px;color:var(--fg3);margin:16px 0 4px}
+  .agent-card{width:100%;min-height:72px;display:flex;align-items:center;gap:9px;padding:12px 0;background:none;border:0;border-bottom:1px solid var(--line);text-align:left}
+  .agent-avatar{height:32px;width:32px;display:grid;place-items:center;border:1px solid #3b3260;border-radius:8px;background:var(--bg2);color:var(--violet);font:12px var(--mono);flex:none}
+  .agent-info{flex:1;min-width:0}
+  .agent-info strong{display:block;font:600 12px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agent-info small{display:block;margin-top:5px;color:var(--fg3);font:10px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agent-card.viewing .agent-info strong{color:var(--cyan)}
+  .agent-state{font:10px var(--mono);text-align:right}
+  .agent-state small{display:block;margin-top:5px;font-size:9px;color:var(--fg3)}
+  .agents-foot{padding:12px 14px max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--line);font-size:10px;color:var(--fg3);flex:none}
+  .short-phone .app{grid-template-rows:44px minmax(0,1fr)}
+  .short-phone .mobile-context{display:none}
+  .short-phone .short-only{display:grid}
+  .short-phone .mobile-actions{position:absolute;top:0;left:0;right:0;z-index:20}
+  .short-phone .term{padding:4px 12px}
+  .short-phone .dock textarea{max-height:44px}
+  .short-phone .dock form{padding:4px 12px;gap:4px}
+  .short-phone .dock form select{height:28px}
+  .short-phone .dock .keys{padding:2px 12px}
+  .short-phone .keys .btn{min-height:30px}
+  .short-phone .agents-head{min-height:44px;padding:0 10px}
+  .short-phone .agents-attention,.short-phone .agents-summary,.short-phone .agents-foot{display:none}
+  .short-phone .agents-search-wrap{padding-top:4px}
+  .short-phone .side-h{min-height:44px;padding:0 10px 0 16px}
+  .short-phone .mobile-search{padding:4px 12px}
+  .short-phone .mobile-nav-footer{display:none}
+  .modal{top:var(--app-top,0px);bottom:auto;height:var(--app-height,100dvh)}
+  .modal .card{max-height:95%;overflow:auto}
+  .card input,.card select{font-size:16px}
+  .toasts{right:12px;bottom:12px;left:12px;z-index:70}
+  .toast{max-width:none;overflow-wrap:anywhere}
+}
 </style>
 </head>
 <body>
 <div class="app">
-  <header>
+  <header class="mobile-only mobile-header" id="mobile-header">
+    <button class="mobile-icon" id="mobile-menu" aria-label="Open spaces, tabs and panes" aria-controls="session-sidebar" aria-expanded="false">☰</button>
+    <div class="mobile-title"><strong id="mobile-title">Herdr</strong><small id="mobile-path">Connecting…</small></div>
+    <button class="short-only mobile-icon" id="mobile-header-more" aria-label="Pane actions" aria-expanded="false" aria-controls="mobile-actions">···</button>
+    <button class="mobile-agents-btn" id="mobile-agents" aria-label="Show all agents" aria-controls="agents-view" aria-expanded="false">Agents <span class="count" id="mobile-agent-count">0</span><span class="mobile-attention-dot" id="mobile-attention" hidden></span></button>
+  </header>
+  <header class="desktop-header">
     <div class="logo"><svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 2 7l10 5 10-5-10-5zm0 12.2L4.2 10.3 2 11.4l10 5 10-5-2.2-1.1L12 14.2zm0 4.2-7.8-3.9L2 15.6l10 5 10-5-2.2-1.1L12 18.4z"/></svg>HERDR</div>
     <nav class="crumbs" id="crumbs"></nav>
     <div class="search"><span style="color:var(--fg3)">⌕</span><input id="filter" placeholder="Filter space, tab, pane… (⌘K)" autocomplete="off"></div>
@@ -147,8 +256,10 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
     <button class="hbtn" id="btn-max" title="Toggle sidebar">⛶</button>
   </header>
   <div class="body" id="body">
-    <aside>
-      <div class="side-h"><h3>Herdr Session</h3><span class="pill" id="active-pill" style="color:var(--green)">0 active</span></div>
+    <button class="nav-scrim mobile-only" id="mobile-scrim" aria-label="Close navigation" tabindex="-1"></button>
+    <aside id="session-sidebar">
+      <div class="side-h"><h3>Herdr Session</h3><span class="pill" id="active-pill" style="color:var(--green)">0 active</span><button class="short-only mobile-icon" id="mobile-nav-spawn" aria-label="New session">＋</button><button class="mobile-only mobile-icon" id="mobile-nav-close" aria-label="Close navigation">✕</button></div>
+      <label class="mobile-only mobile-search"><input id="mobile-filter" placeholder="Find a space, tab, or pane…" aria-label="Find a space, tab or pane" autocomplete="off"></label>
       <div class="tree" id="tree"></div>
       <div class="side-f">
         <div class="row"><span class="k">Local socket bridge</span><span id="conn" style="color:var(--fg3)">● connecting</span></div>
@@ -158,8 +269,12 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
         <div class="bars" id="bars" title="agent status mix"></div>
         <div class="row hint" id="legend"></div>
       </div>
+      <div class="mobile-only mobile-nav-footer"><span id="mobile-connection">Connecting…</span><button class="btn cy" id="mobile-spawn">＋ New session</button></div>
     </aside>
-    <main>
+    <main id="main-content">
+      <div class="mobile-only mobile-context" id="mobile-context" hidden><span class="kind agent" id="mobile-kind"></span><span class="badge" id="mobile-status"></span><span class="connection" id="mobile-live"></span><button class="mobile-icon" id="mobile-more" aria-label="Pane actions" aria-expanded="false" aria-controls="mobile-actions">···</button></div>
+      <div class="mobile-only mobile-actions" id="mobile-actions" hidden><button class="btn" id="mobile-refresh">Refresh</button><button class="btn" id="mobile-focus">Focus in Herdr</button><label class="hint"><input type="checkbox" id="mobile-color" checked> Color</label></div>
+      <div class="mobile-only mobile-empty" id="mobile-empty"><span id="mobile-empty-text">Connecting to Herdr…</span><button class="btn cy" id="mobile-empty-nav">Choose a pane</button></div>
       <div class="tabbar" id="tabbar"></div>
       <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
       <section class="dock" id="dock">
@@ -187,6 +302,14 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
         </form>
       </section>
     </main>
+    <section class="agents-view" id="agents-view" role="dialog" aria-modal="true" aria-labelledby="agents-title">
+      <div class="agents-head"><button class="mobile-icon" id="agents-close" aria-label="Return to focused pane">✕</button><h2 id="agents-title">Agents<small>Across all spaces</small></h2></div>
+      <div class="agents-attention" id="agents-attention" hidden></div>
+      <div class="agents-summary" id="agents-summary"></div>
+      <label class="agents-search-wrap"><input class="agents-search" id="agents-filter" placeholder="Find an agent…" aria-label="Find an agent" autocomplete="off"></label>
+      <div class="agents-list" id="agents-list"></div>
+      <div class="agents-foot">Tap an agent to open its pane. Nothing is interrupted.</div>
+    </section>
   </div>
 </div>
 
@@ -224,6 +347,9 @@ const ICON = {
 };
 
 const S = {tree:null, ws:null, tab:null, pane:null, filter:"", open:new Set(), outputs:new Map(), err:null, busy:false, dockStick:true};
+const phone = matchMedia("(max-width:900px)");
+let mobileView = null, mobileSelected = false, autoMobileDock = false;
+const drafts = new Map();
 
 /* ---------------- utils ---------------- */
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -275,6 +401,7 @@ async function refreshTree(manual=false){
     if(!getWs(S.ws)){S.ws=S.tree.focused.workspace||S.tree.workspaces[0]?.workspace_id||null;S.tab=null;if(S.ws)S.open.add(S.ws);}
     if(!getTab(S.tab)||getTab(S.tab).workspace_id!==S.ws){const w=getWs(S.ws);S.tab=(w&&getTab(w.active_tab_id))?w.active_tab_id:(S.ws?tabsOf(S.ws)[0]?.tab_id:null);}
     if(S.pane&&!getPane(S.pane)){toast(`pane ${S.pane} is gone`,"err");closeDock();}
+    if(phone.matches)ensureMobilePane();
   }catch(e){S.err=e.message;}
   finally{S.busy=false;$("refresh-ico").classList.remove("spin");render();}
 }
@@ -287,7 +414,7 @@ async function readPane(id,{lines=60,ansi=false}={}){
   finally{reading.delete(id+ansi);}
 }
 async function pollPanes(){
-  if(!S.tree||!S.tab||document.hidden)return;
+  if(!S.tree||!S.tab||document.hidden||phone.matches)return;
   const ps=panesOf(S.tab);const lay=layoutOf(S.tab);
   await Promise.all(ps.map(async p=>{
     const r=lay?.panes.find(x=>x.pane_id===p.pane_id)?.rect;
@@ -299,7 +426,7 @@ async function pollPanes(){
 }
 async function pollDock(){
   if(!S.pane||document.hidden)return;
-  const ansi=$("dock-ansi").checked;const txt=await readPane(S.pane,{lines:400,ansi});if(txt===undefined)return;
+  const id=S.pane,ansi=$("dock-ansi").checked;const txt=await readPane(id,{lines:400,ansi});if(txt===undefined||S.pane!==id||$("dock-ansi").checked!==ansi)return;
   const el=$("dock-term");const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<30;
   el.innerHTML=ansi?ansiToHtml(txt):esc(txt);if(atBottom||S.dockStick){el.scrollTop=el.scrollHeight;S.dockStick=false;}
 }
@@ -312,10 +439,13 @@ function tabMatch(t){return matches(tabName(t),t.tab_id)||panesOf(t.tab_id).some
 function wsMatch(w){return matches(wsName(w),w.workspace_id)||tabsOf(w.workspace_id).some(tabMatch);}
 
 /* ---------------- render ---------------- */
-function render(){renderSide();renderCrumbs();renderTabs();renderCanvas();renderDockHeader();}
+function render(){renderSide();renderCrumbs();renderTabs();if(!phone.matches)renderCanvas();renderDockHeader();renderMobile();}
 
 function renderSide(){
   const t=S.tree,el=$("tree");
+  const focused=phone.matches&&el.contains(document.activeElement)?document.activeElement:null;
+  const focusKey=focused&&["toggle","pane","tab","ws"].find(k=>focused.dataset[k]);
+  const focusId=focusKey&&focused.dataset[focusKey];
   const online=!!t&&!S.err;
   $("conn").innerHTML=online?'<span style="color:var(--green)">● CONNECTED</span>':`<span style="color:var(--red)" title="${esc(S.err||"")}">● ${t?"STALE":"OFFLINE"}</span>`;
   if(!t){el.innerHTML=`<div class="hint" style="padding:10px">${S.err?esc(S.err):"Loading…"}</div>`;return;}
@@ -345,6 +475,8 @@ function renderSide(){
     h+=`</div>`;
   }
   el.innerHTML=h+"</div>";
+  if(phone.matches)el.querySelectorAll(".node:not(.host),[data-toggle]").forEach(n=>{n.tabIndex=0;n.setAttribute("role","button");if(n.dataset.toggle)n.setAttribute("aria-label","Expand or collapse space");});
+  if(focusKey)el.querySelector(`[data-${focusKey}="${CSS.escape(focusId)}"]`)?.focus({preventScroll:true});
 }
 
 function renderCrumbs(){
@@ -400,22 +532,134 @@ function renderDockHeader(){
   $("dock-title").textContent=paneName(p);$("dock-pid").textContent=`${p.pane_id}${p.agent?" · "+p.agent:""}`;
   $("dock-dot").className="dot s-"+s;$("dock-badge").className="badge "+s;$("dock-badge").textContent=s;
   const mode=$("dock-mode");mode.options[0].disabled=!p.agent;if(!p.agent&&mode.value==="prompt")mode.value="send";
-  $("dock-input").placeholder=p.agent?(s==="blocked"?"Agent is BLOCKED — answer with keys or Type + Enter":"Message the agent… (Enter to send, Shift+Enter newline)"):"Type a shell command… (Enter to send)";
+  $("dock-input").placeholder=phone.matches?(p.agent?(s==="blocked"?"Reply to this agent…":"Message this agent…"):"Type a shell command…"):(p.agent?(s==="blocked"?"Agent is BLOCKED — answer with keys or Type + Enter":"Message the agent… (Enter to send, Shift+Enter newline)"):"Type a shell command… (Enter to send)");
 }
 
 /* ---------------- selection ---------------- */
-function selectWs(id){S.ws=id;S.open.add(id);const w=getWs(id);S.tab=(w&&getTab(w.active_tab_id))?w.active_tab_id:tabsOf(id)[0]?.tab_id;render();pollPanes();}
-function selectTab(id){const t=getTab(id);if(!t)return;S.ws=t.workspace_id;S.tab=id;render();pollPanes();}
-function openDock(id){
+function selectWs(id){S.ws=id;S.open.add(id);const w=getWs(id);S.tab=(w&&getTab(w.active_tab_id))?w.active_tab_id:tabsOf(id)[0]?.tab_id;if(phone.matches){selectMobileTabPane();return;}render();pollPanes();}
+function selectTab(id){const t=getTab(id);if(!t)return;S.ws=t.workspace_id;S.tab=id;if(phone.matches){selectMobileTabPane();return;}render();pollPanes();}
+function openDock(id,{autofocus=true}={}){
   const p=getPane(id);if(!p)return;
   if(S.tab!==p.tab_id){S.ws=p.workspace_id;S.tab=p.tab_id;S.open.add(p.workspace_id);}
-  if(S.pane!==id){S.pane=id;S.dockStick=true;$("dock-term").innerHTML='<span class="dim">reading terminal…</span>';$("dock-mode").value=p.agent?"prompt":"send";}
+  if(S.pane!==id){
+    saveDraft();S.pane=id;S.dockStick=true;$("dock-term").innerHTML='<span class="dim">reading terminal…</span>';
+    const draft=drafts.get(id);$("dock-input").value=draft?.text||"";$("dock-input").style.height="auto";$("dock-mode").value=draft?.mode||defaultInputMode(p);
+  }
+  if(phone.matches){mobileSelected=true;setMobileView(null);}
   history.replaceState(null,"","#pane="+encodeURIComponent(id));
-  $("dock").classList.add("open");render();pollDock();$("dock-input").focus();
+  $("dock").classList.add("open");render();pollDock();if(autofocus&&!phone.matches)$("dock-input").focus();
 }
-function closeDock(){S.pane=null;$("dock").classList.remove("open");history.replaceState(null,"",location.pathname);render();}
+function defaultInputMode(p){return p.agent&&!(phone.matches&&st(p.agent_status)==="blocked")?"prompt":"send";}
+function saveDraft(){if(S.pane)drafts.set(S.pane,{text:$("dock-input").value,mode:$("dock-mode").value});}
+function closeDock(){saveDraft();S.pane=null;$("dock").classList.remove("open");history.replaceState(null,"",location.pathname);render();}
+
+/* ---------------- phone navigation ---------------- */
+function mobilePaneForTab(){
+  return panesOf(S.tab).find(p=>p.pane_id===S.tree.focused.pane)||panesOf(S.tab).find(p=>p.focused)||panesOf(S.tab)[0];
+}
+function ensureMobilePane(){
+  if(!S.tree)return;
+  const selected=getPane(S.pane);
+  if(selected){S.ws=selected.workspace_id;S.tab=selected.tab_id;return;}
+  const deepId=new URLSearchParams(location.hash.slice(1)).get("pane");
+  const p=mobileSelected?mobilePaneForTab():(getPane(deepId)||getPane(S.tree.focused.pane)||mobilePaneForTab()||S.tree.panes[0]);
+  if(!p)return;
+  loop.done=1; // The mobile initializer has consumed the startup deep link.
+  S.pane=p.pane_id;S.tab=p.tab_id;S.ws=p.workspace_id;S.open.add(S.ws);S.dockStick=true;
+  const draft=drafts.get(S.pane);$("dock-input").value=draft?.text||"";$("dock-mode").value=draft?.mode||defaultInputMode(p);
+  $("dock-term").textContent="Reading terminal…";$("dock").classList.add("open");autoMobileDock=true;
+  pollDock();
+}
+function selectMobileTabPane(){
+  mobileSelected=true;
+  const p=mobilePaneForTab();
+  if(p)openDock(p.pane_id,{autofocus:false});
+  else{closeDock();setMobileView(null);render();}
+}
+function setMobileView(view){
+  if(!phone.matches)view=null;
+  mobileView=view;
+  $("body").classList.toggle("nav-open",view==="navigation");
+  $("agents-view").classList.toggle("open",view==="agents");
+  $("mobile-menu").setAttribute("aria-expanded",String(view==="navigation"));
+  $("mobile-agents").setAttribute("aria-expanded",String(view==="agents"));
+  $("main-content").inert=!!view;
+  $("mobile-header").inert=!!view;
+  $("session-sidebar").inert=phone.matches&&view!=="navigation";
+  $("agents-view").inert=view!=="agents";
+  $("session-sidebar").setAttribute("role",phone.matches?"dialog":"complementary");
+  $("session-sidebar").setAttribute("aria-label","Spaces, tabs and panes");
+  if(phone.matches&&view==="navigation")$("session-sidebar").setAttribute("aria-modal","true");else $("session-sidebar").removeAttribute("aria-modal");
+  if(phone.matches)$("dock-input").blur();
+  if(view==="navigation")$("mobile-nav-close").focus();
+  if(view==="agents"){renderAgents();$("agents-close").focus();}
+}
+function renderMobile(){
+  if(!phone.matches)return;
+  const p=getPane(S.pane),w=getWs(S.ws),tb=getTab(S.tab),agents=S.tree?.panes.filter(p=>p.agent)||[];
+  $("mobile-title").textContent=p?paneName(p):"Herdr";
+  $("mobile-path").textContent=[w&&wsName(w),tb&&tabName(tb)].filter(Boolean).join(" / ")||"Choose a pane";
+  $("mobile-agent-count").textContent=agents.length;
+  const blocked=agents.filter(p=>st(p.agent_status)==="blocked").length;
+  $("mobile-attention").hidden=!blocked;
+  $("mobile-agents").title=blocked?`${blocked} blocked · ${agents.length} agents`:`${agents.length} agents`;
+  $("mobile-context").hidden=!p;$("mobile-empty").hidden=!!p;
+  $("mobile-empty-text").textContent=S.err?`Connection unavailable: ${S.err}`:S.tree?"No panes in this tab. Choose another tab or launch a session.":"Connecting to Herdr…";
+  const connected=S.tree&&!S.err;
+  $("mobile-connection").textContent=connected?"● Connected":S.tree?"● Stale":"● Offline";
+  $("mobile-live").textContent=connected?"● LIVE":S.tree?"● STALE":"● OFFLINE";
+  $("mobile-live").style.color=connected?"var(--green)":"var(--amber)";
+  if(p){const s=st(p.agent_status);$("mobile-kind").textContent=p.agent||"shell";$("mobile-status").className="badge "+s;$("mobile-status").innerHTML=`<span class="dot s-${s}"></span>${esc(s)}`;}
+  if(mobileView==="agents")renderAgents();
+}
+function renderAgents(){
+  const focused=document.activeElement?.dataset.agentPane;
+  const agents=(S.tree?.panes||[]).filter(p=>p.agent),q=$("agents-filter").value.trim().toLowerCase();
+  $("agents-title").innerHTML=`Agents ${agents.length}<small>Across all spaces</small>`;
+  const cnt=Object.fromEntries(STATUSES.map(s=>[s,agents.filter(p=>st(p.agent_status)===s).length]));
+  $("agents-summary").innerHTML=STATUSES.filter(s=>s!=="unknown"||cnt[s]).map(s=>`<div><strong style="color:${STATUS_COLOR[s]}">${cnt[s]}</strong><span>${s}</span></div>`).join("");
+  $("agents-attention").hidden=!cnt.blocked;$("agents-attention").textContent=`${cnt.blocked} agent${cnt.blocked===1?"":"s"} need${cnt.blocked===1?"s":""} your attention`;
+  const rows=agents.filter(p=>{const w=getWs(p.workspace_id),tb=getTab(p.tab_id);return [paneName(p),p.agent,p.agent_status,w&&wsName(w),tb&&tabName(tb)].some(v=>String(v||"").toLowerCase().includes(q));});
+  rows.sort((a,b)=>(st(a.agent_status)==="blocked"?0:1)-(st(b.agent_status)==="blocked"?0:1)||paneName(a).localeCompare(paneName(b)));
+  let lastGroup=null;
+  $("agents-list").innerHTML=rows.map(p=>{
+    const s=st(p.agent_status),group=s==="blocked"?"NEEDS ATTENTION":"ALL OTHER AGENTS",w=getWs(p.workspace_id),tb=getTab(p.tab_id);
+    const heading=group!==lastGroup?`<div class="agents-section">${group}</div>`:"";lastGroup=group;
+    return heading+`<button class="agent-card ${p.pane_id===S.pane?"viewing":""}" data-agent-pane="${esc(p.pane_id)}"><span class="agent-avatar">${esc(p.agent.slice(0,2))}</span><span class="agent-info"><strong>${esc(paneName(p))}${p.pane_id===S.pane?" · Viewing":""}</strong><small>${esc([w&&wsName(w),tb&&tabName(tb)].filter(Boolean).join(" / "))}</small></span><span class="agent-state" style="color:${STATUS_COLOR[s]}">● ${s}<small>${esc(p.agent)}</small></span></button>`;
+  }).join("")||`<p class="hint" style="padding:16px 0">${agents.length?"No matching agents.":S.tree?"No agents yet. Plain shells are in Workspace navigation.":"Agent list unavailable. Check the connection."}</p>`;
+  if(focused)$("agents-list").querySelector(`[data-agent-pane="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
+}
+function syncMobileViewport(){
+  if(!phone.matches){document.documentElement.style.removeProperty("--app-height");document.documentElement.style.removeProperty("--app-top");document.body.classList.remove("short-phone");return;}
+  const v=window.visualViewport,height=v?.height||innerHeight;document.documentElement.style.setProperty("--app-height",`${height}px`);document.documentElement.style.setProperty("--app-top",`${v?.offsetTop||0}px`);
+  document.body.classList.toggle("short-phone",height<420);
+}
+phone.addEventListener("change",()=>{
+  if(phone.matches){autoMobileDock=!S.pane;ensureMobilePane();if(S.ws)S.open.add(S.ws);}
+  else if(autoMobileDock&&!mobileSelected)closeDock();
+  setMobileView(null);$("mobile-actions").hidden=true;syncMobileViewport();render();if(!phone.matches)pollPanes();
+});
+window.visualViewport?.addEventListener("resize",syncMobileViewport);
+window.visualViewport?.addEventListener("scroll",syncMobileViewport);
+addEventListener("resize",syncMobileViewport);syncMobileViewport();setMobileView(null);
 
 /* ---------------- events ---------------- */
+$("mobile-menu").onclick=()=>setMobileView("navigation");
+$("mobile-empty-nav").onclick=()=>setMobileView("navigation");
+$("mobile-scrim").onclick=$("mobile-nav-close").onclick=()=>{setMobileView(null);$("mobile-menu").focus();};
+$("mobile-agents").onclick=()=>setMobileView("agents");
+$("agents-close").onclick=()=>{setMobileView(null);$("mobile-agents").focus();};
+$("agents-filter").oninput=renderAgents;
+$("agents-list").onclick=e=>{const b=e.target.closest("[data-agent-pane]");if(b)openDock(b.dataset.agentPane,{autofocus:false});};
+$("mobile-filter").oninput=e=>{S.filter=e.target.value.trim().toLowerCase();$("filter").value=e.target.value;renderSide();};
+$("mobile-spawn").onclick=()=>{setMobileView(null);openSpawn(S.ws);};
+$("mobile-nav-spawn").onclick=()=>$("mobile-spawn").click();
+$("mobile-more").onclick=()=>{const el=$("mobile-actions");el.hidden=!el.hidden;for(const id of ["mobile-more","mobile-header-more"])$(id).setAttribute("aria-expanded",String(!el.hidden));};
+$("mobile-header-more").onclick=()=>$("mobile-more").click();
+$("mobile-refresh").onclick=()=>refreshTree(true).then(pollDock);
+$("mobile-focus").onclick=()=>$("dock-focus").click();
+$("mobile-color").onchange=()=>{$("dock-ansi").checked=$("mobile-color").checked;pollDock();};
+$("tree").addEventListener("keydown",e=>{if(phone.matches&&(e.key==="Enter"||e.key===" ")&&e.target.matches(".node,[data-toggle]")){e.preventDefault();e.target.click();}});
 $("tree").addEventListener("click",e=>{
   const tog=e.target.closest("[data-toggle]");if(tog){const id=tog.dataset.toggle;S.open.has(id)?S.open.delete(id):S.open.add(id);renderSide();return;}
   const n=e.target.closest(".node");if(!n)return;
@@ -432,7 +676,7 @@ $("canvas").addEventListener("click",async e=>{
   openDock(id);
 });
 $("dock-close").onclick=closeDock;
-$("dock-ansi").onchange=()=>pollDock();
+$("dock-ansi").onchange=()=>{$("mobile-color").checked=$("dock-ansi").checked;pollDock();};
 $("dock-focus").onclick=async()=>{const p=getPane(S.pane);if(!p)return;try{await act("focus",{pane:p.pane_id,tab:p.tab_id,agent:!!p.agent});toast("focused in Herdr TUI");refreshTree();}catch(x){toast(x.message,"err");}};
 const KEYS=[["Enter","enter"],["Esc","esc"],["Ctrl-C","ctrl+c"],["Tab","tab"],["↑","up"],["↓","down"],["←","left"],["→","right"],["y","y"],["n","n"],["1","1"],["2","2"],["3","3"],["Ctrl-D","ctrl+d"],["Ctrl-L","ctrl+l"]];
 $("dock-keys").innerHTML='<span class="hint" style="align-self:center;margin-right:4px">keys:</span>'+KEYS.map(([l,k])=>`<button class="btn" data-key="${esc(k)}">${esc(l)}</button>`).join("");
@@ -440,21 +684,32 @@ $("dock-keys").addEventListener("click",async e=>{const b=e.target.closest("[dat
 $("dock-input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("dock-form").requestSubmit();}});
 $("dock-input").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,140)+"px";});
 $("dock-form").addEventListener("submit",async e=>{
-  e.preventDefault();const inp=$("dock-input"),text=inp.value,mode=$("dock-mode").value;if(!S.pane||(!text&&mode!=="send"))return;
+  e.preventDefault();const inp=$("dock-input"),text=inp.value,mode=$("dock-mode").value,pane=S.pane;if(!pane||(!text&&mode!=="send"))return;
   try{
-    if(mode==="prompt")await act("prompt",{pane:S.pane,text});
-    else await act("send",{pane:S.pane,text,enter:mode==="send"});
-    inp.value="";inp.style.height="auto";S.dockStick=true;setTimeout(pollDock,300);setTimeout(refreshTree,600);
+    if(mode==="prompt")await act("prompt",{pane,text});
+    else await act("send",{pane,text,enter:mode==="send"});
+    const draft=drafts.get(pane);if(draft?.text===text)drafts.delete(pane);
+    if(S.pane===pane&&inp.value===text){inp.value="";inp.style.height="auto";}S.dockStick=true;setTimeout(pollDock,300);setTimeout(refreshTree,600);
   }catch(x){toast(x.message,"err");}
 });
 // dock resize
 $("dock-resize").addEventListener("mousedown",e=>{e.preventDefault();const startY=e.clientY,startH=$("dock").offsetHeight;
   const mv=ev=>{$("dock").style.height=Math.max(160,Math.min(window.innerHeight-160,startH+startY-ev.clientY))+"px";};
   const up=()=>{removeEventListener("mousemove",mv);removeEventListener("mouseup",up);};addEventListener("mousemove",mv);addEventListener("mouseup",up);});
-$("filter").addEventListener("input",e=>{S.filter=e.target.value.trim().toLowerCase();renderSide();});
+$("filter").addEventListener("input",e=>{S.filter=e.target.value.trim().toLowerCase();$("mobile-filter").value=e.target.value;renderSide();});
 $("btn-refresh").onclick=()=>refreshTree(true).then(pollPanes);
 $("btn-max").onclick=()=>$("body").classList.toggle("nosidebar");
 addEventListener("keydown",e=>{
+  if(phone.matches){
+    if(e.key==="Escape"&&!$("spawn").classList.contains("open")){
+      e.preventDefault();if(mobileView){const prior=mobileView;setMobileView(null);$(prior==="agents"?"mobile-agents":"mobile-menu").focus();}else{$("dock-input").blur();$("mobile-actions").hidden=true;}return;
+    }
+    if(mobileView&&e.key==="Tab"){
+      const root=$(mobileView==="agents"?"agents-view":"session-sidebar"),els=[...root.querySelectorAll('button,input,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.disabled);
+      if(els.length){const first=els[0],last=els[els.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}return;
+    }
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setMobileView("navigation");$("mobile-filter").focus();return;}
+  }
   if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$("filter").focus();$("filter").select();}
   if(e.key==="Escape"){if($("spawn").classList.contains("open"))closeSpawn();else if(document.activeElement===$("filter")){$("filter").value="";S.filter="";renderSide();$("filter").blur();}else if(S.pane)closeDock();}
 });

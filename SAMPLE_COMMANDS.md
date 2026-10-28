@@ -44,8 +44,17 @@ launchctl kickstart -k "gui/$(id -u)/dev.herdr.webui"
 https://<machine>.<tailnet>.ts.net/
 ```
 
-Expect the Host > Space > Tab > Pane tree and live pane output. Safari's Share >
-Add to Home Screen makes a convenient shortcut.
+Expect one focused terminal, **☰** for the space/tab/pane tree, and **Agents** for
+all agent statuses. Selecting a pane returns to its output without sending input.
+Check that tapping the composer opens the keyboard while keeping input visible.
+Safari's Share > Add to Home Screen makes a convenient shortcut.
+
+7. Run browser regressions, if Playwright Python and Google Chrome are already installed.
+
+```bash
+python3 -m unittest test_ui -v
+# Expect: OK; fictional loopback sessions only, no live terminal commands.
+```
 
 | Failure | Fix |
 | --- | --- |
@@ -55,3 +64,4 @@ Add to Home Screen makes a convenient shortcut.
 | iPhone cannot connect | Connect both devices to the same tailnet, check tailnet access rules, and keep the Mac awake. |
 | HTTP 403 for the whole page | Use localhost directly or the allowed phone through Serve; verify its current IPs match the LaunchAgent. |
 | HTTP 403 only on mutations after a restart | Reload the page to obtain the new per-process CSRF token. |
+| Browser tests cannot start | Use an existing Playwright Python/Google Chrome environment; these are optional test tools, not application dependencies. |
