@@ -29,8 +29,11 @@ output and direct agent interaction from the browser.
   It keeps your browser selection when another terminal gains TUI focus.
 - **☰** opens the searchable space → tab → pane tree. Choose a pane to return
   to its terminal; choosing a space or tab opens its focused/first pane.
-- **Agents** shows agents across every space, with blocked agents first, search,
-  and status totals. An amber indicator means an agent needs attention.
+- **Agents** shows agents across every space, sorted **Working → Blocked → Done →
+  Idle** (unknown states last), with alphabetical ordering within each state.
+  Tap a state count to show only that state; tap the same count again to restore
+  all states. Search combines with the selected state, and counts always show
+  totals across all agents. An amber indicator means an agent needs attention.
 - The message composer and horizontally scrollable terminal keys stay below the
   output. Input drafts are kept separately per pane while the page is open.
   Selecting a pane does not open the phone keyboard or send a command.

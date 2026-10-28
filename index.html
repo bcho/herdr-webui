@@ -201,7 +201,9 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
   .agents-head small{display:block;font-size:10px;color:var(--fg3);font-weight:400;margin-top:3px}
   .agents-attention{margin:12px 14px 0;padding:10px;border:1px solid #4b3b24;border-radius:8px;background:#211c15;color:var(--amber);font-size:11px}
   .agents-summary{display:flex;margin:14px 14px 0;padding-bottom:13px;border-bottom:1px solid var(--line);gap:8px;flex:none}
-  .agents-summary>div{flex:1}
+  .agents-summary>button{flex:1;min-width:0;min-height:48px;padding:4px 2px;background:none;border:1px solid transparent;border-radius:7px;text-align:left}
+  .agents-summary>button[aria-pressed="true"]{background:#132634;border-color:var(--cyan)}
+  .agents-summary>button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
   .agents-summary strong{font:500 19px var(--mono);display:block}
   .agents-summary span{font-size:9px;color:var(--fg2)}
   .agents-search-wrap{padding:12px 14px 0;flex:none}
@@ -227,7 +229,13 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
   .short-phone .dock .keys{padding:2px 12px}
   .short-phone .keys .btn{min-height:30px}
   .short-phone .agents-head{min-height:44px;padding:0 10px}
-  .short-phone .agents-attention,.short-phone .agents-summary,.short-phone .agents-foot{display:none}
+  .short-phone .agents-attention,.short-phone .agents-foot{display:none}
+  .short-phone .agents-view{overflow:auto}
+  .short-phone .agents-summary{margin-top:4px;padding-bottom:0;border-bottom:0}
+  .short-phone .agents-summary>button{height:44px;padding:0 2px}
+  .short-phone .agents-summary strong{line-height:22px}
+  .short-phone .agents-summary span{display:block;line-height:12px}
+  .short-phone .agents-list{flex:none;overflow:visible;padding-bottom:4px}
   .short-phone .agents-search-wrap{padding-top:4px}
   .short-phone .side-h{min-height:44px;padding:0 10px 0 16px}
   .short-phone .mobile-search{padding:4px 12px}
@@ -349,7 +357,7 @@ const ICON = {
 
 const S = {tree:null, ws:null, tab:null, pane:null, filter:"", open:new Set(), outputs:new Map(), err:null, busy:false, dockStick:true};
 const phone = matchMedia("(max-width:900px)");
-let mobileView = null, mobileSelected = false, autoMobileDock = false;
+let mobileView = null, mobileSelected = false, autoMobileDock = false, agentStateFilter = null;
 const drafts = new Map();
 const closingPanes = new Set();
 let interruptBusy = false;
@@ -632,21 +640,22 @@ function renderMobile(){
   if(mobileView==="agents")renderAgents();
 }
 function renderAgents(){
-  const focused=document.activeElement?.dataset.agentPane;
+  const focused=document.activeElement?.dataset.agentPane,focusedState=document.activeElement?.dataset.agentState;
   const agents=(S.tree?.panes||[]).filter(p=>p.agent),q=$("agents-filter").value.trim().toLowerCase();
   $("agents-title").innerHTML=`Agents ${agents.length}<small>Across all spaces</small>`;
   const cnt=Object.fromEntries(STATUSES.map(s=>[s,agents.filter(p=>st(p.agent_status)===s).length]));
-  $("agents-summary").innerHTML=STATUSES.filter(s=>s!=="unknown"||cnt[s]).map(s=>`<div><strong style="color:${STATUS_COLOR[s]}">${cnt[s]}</strong><span>${s}</span></div>`).join("");
+  $("agents-summary").innerHTML=STATUSES.filter(s=>s!=="unknown"||cnt[s]||agentStateFilter===s).map(s=>`<button data-agent-state="${s}" aria-label="Filter ${s} agents" aria-pressed="${agentStateFilter===s}"><strong style="color:${STATUS_COLOR[s]}">${cnt[s]}</strong><span>${s}</span></button>`).join("");
   $("agents-attention").hidden=!cnt.blocked;$("agents-attention").textContent=`${cnt.blocked} agent${cnt.blocked===1?"":"s"} need${cnt.blocked===1?"s":""} your attention`;
-  const rows=agents.filter(p=>{const w=getWs(p.workspace_id),tb=getTab(p.tab_id);return [paneName(p),p.agent,p.agent_status,w&&wsName(w),tb&&tabName(tb)].some(v=>String(v||"").toLowerCase().includes(q));});
-  rows.sort((a,b)=>(st(a.agent_status)==="blocked"?0:1)-(st(b.agent_status)==="blocked"?0:1)||paneName(a).localeCompare(paneName(b)));
+  const rows=agents.filter(p=>{if(agentStateFilter&&st(p.agent_status)!==agentStateFilter)return false;const w=getWs(p.workspace_id),tb=getTab(p.tab_id);return [paneName(p),p.agent,p.agent_status,w&&wsName(w),tb&&tabName(tb)].some(v=>String(v||"").toLowerCase().includes(q));});
+  rows.sort((a,b)=>STATUSES.indexOf(st(a.agent_status))-STATUSES.indexOf(st(b.agent_status))||paneName(a).localeCompare(paneName(b)));
   let lastGroup=null;
   $("agents-list").innerHTML=rows.map(p=>{
-    const s=st(p.agent_status),group=s==="blocked"?"NEEDS ATTENTION":"ALL OTHER AGENTS",w=getWs(p.workspace_id),tb=getTab(p.tab_id);
+    const s=st(p.agent_status),group=s.toUpperCase(),w=getWs(p.workspace_id),tb=getTab(p.tab_id);
     const heading=group!==lastGroup?`<div class="agents-section">${group}</div>`:"";lastGroup=group;
     return heading+`<button class="agent-card ${p.pane_id===S.pane?"viewing":""}" data-agent-pane="${esc(p.pane_id)}"><span class="agent-avatar">${esc(p.agent.slice(0,2))}</span><span class="agent-info"><strong>${esc(paneName(p))}${p.pane_id===S.pane?" · Viewing":""}</strong><small>${esc([w&&wsName(w),tb&&tabName(tb)].filter(Boolean).join(" / "))}</small></span><span class="agent-state" style="color:${STATUS_COLOR[s]}">● ${s}<small>${esc(p.agent)}</small></span></button>`;
   }).join("")||`<p class="hint" style="padding:16px 0">${agents.length?"No matching agents.":S.tree?"No agents yet. Plain shells are in Workspace navigation.":"Agent list unavailable. Check the connection."}</p>`;
   if(focused)$("agents-list").querySelector(`[data-agent-pane="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
+  if(focusedState)$("agents-summary").querySelector(`[data-agent-state="${CSS.escape(focusedState)}"]`)?.focus({preventScroll:true});
 }
 function syncMobileViewport(){
   if(!phone.matches){document.documentElement.style.removeProperty("--app-height");document.documentElement.style.removeProperty("--app-top");document.body.classList.remove("short-phone");return;}
@@ -669,6 +678,7 @@ $("mobile-scrim").onclick=$("mobile-nav-close").onclick=()=>{setMobileView(null)
 $("mobile-agents").onclick=()=>setMobileView("agents");
 $("agents-close").onclick=()=>{setMobileView(null);$("mobile-agents").focus();};
 $("agents-filter").oninput=renderAgents;
+$("agents-summary").onclick=e=>{const b=e.target.closest("[data-agent-state]");if(!b)return;agentStateFilter=agentStateFilter===b.dataset.agentState?null:b.dataset.agentState;renderAgents();};
 $("agents-list").onclick=e=>{const b=e.target.closest("[data-agent-pane]");if(b)openDock(b.dataset.agentPane,{autofocus:false});};
 $("mobile-filter").oninput=e=>{S.filter=e.target.value.trim().toLowerCase();$("filter").value=e.target.value;renderSide();};
 $("mobile-spawn").onclick=()=>{setMobileView(null);openSpawn(S.ws);};

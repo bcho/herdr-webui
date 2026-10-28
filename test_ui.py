@@ -155,11 +155,11 @@ class PhoneUITest(unittest.TestCase):
         self.assertEqual(self.page.locator("#dock-mode").input_value(), "send")
         self.assertEqual(self.httpd.actions, [])
 
-    def test_agents_show_all_statuses_blocked_first_and_search(self):
+    def test_agents_show_working_before_blocked_and_search(self):
         self.open()
         self.page.get_by_role("button", name="Show all agents").click()
         self.assertEqual(self.page.locator(".agent-card").count(), 3)
-        self.assertEqual(self.page.locator(".agent-card").first.get_attribute("data-agent-pane"), "p4")
+        self.assertEqual(self.page.locator(".agent-card").evaluate_all("els => els.map(el => el.dataset.agentPane)"), ["p2", "p1", "p4"])
         self.assertTrue(self.page.locator("#agents-attention").is_visible())
         self.page.get_by_role("textbox", name="Find an agent").fill("review")
         self.assertEqual(self.page.locator(".agent-card").count(), 1)
@@ -167,6 +167,96 @@ class PhoneUITest(unittest.TestCase):
         self.assertEqual(self.page.locator("#mobile-title").inner_text(), "review-agent")
         self.assertFalse(self.page.locator("#agents-view").is_visible())
         self.assertFalse(self.page.locator("#dock-input").evaluate("el => el === document.activeElement"))
+
+    def add_agent_states(self):
+        for pane_id, name, status in (("p5", "z-done", "done"), ("p6", "a-idle", "idle"), ("p7", "a-unknown", "unexpected")):
+            self.httpd.tree["panes"].insert(0, {"pane_id": pane_id, "tab_id": "t2", "workspace_id": "w2", "label": name, "agent": "pi", "agent_status": status})
+
+    def agent_ids(self):
+        return self.page.locator(".agent-card").evaluate_all("els => els.map(el => el.dataset.agentPane)")
+
+    def test_agents_sort_all_states_and_unknown_last(self):
+        self.add_agent_states()
+        self.open()
+        self.page.get_by_role("button", name="Show all agents").click()
+        self.assertEqual(self.agent_ids(), ["p2", "p1", "p4", "p5", "p6", "p7"])
+        self.assertEqual(self.page.locator(".agents-section").all_text_contents(), ["WORKING", "BLOCKED", "DONE", "IDLE", "UNKNOWN"])
+
+    def test_state_count_filters_and_same_count_restores_sorted_list(self):
+        self.add_agent_states()
+        self.open()
+        self.page.get_by_role("button", name="Show all agents").click()
+        for state, ids in (("working", ["p2", "p1"]), ("blocked", ["p4"]), ("done", ["p5"]), ("idle", ["p6"]), ("unknown", ["p7"])):
+            button = self.page.get_by_role("button", name=f"Filter {state} agents")
+            button.locator("strong").click()
+            self.assertEqual(self.agent_ids(), ids)
+            self.assertEqual(button.get_attribute("aria-pressed"), "true")
+            button.locator("strong").click()
+            self.assertEqual(self.agent_ids(), ["p2", "p1", "p4", "p5", "p6", "p7"])
+            self.assertEqual(button.get_attribute("aria-pressed"), "false")
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_state_filter_switches_combines_with_search_and_keeps_totals(self):
+        self.open()
+        self.page.get_by_role("button", name="Show all agents").click()
+        self.page.get_by_role("button", name="Filter working agents").click()
+        self.page.get_by_role("textbox", name="Find an agent").fill("ui-agent")
+        self.assertEqual(self.agent_ids(), ["p1"])
+        self.assertEqual(self.page.locator('[data-agent-state="working"] strong').inner_text(), "2")
+        self.page.get_by_role("button", name="Filter blocked agents").click()
+        self.assertEqual(self.agent_ids(), [])
+        self.page.get_by_role("textbox", name="Find an agent").fill("")
+        self.assertEqual(self.agent_ids(), ["p4"])
+        self.assertEqual(self.page.locator('[data-agent-state="working"]').get_attribute("aria-pressed"), "false")
+        self.page.get_by_role("button", name="Filter done agents").click()
+        self.assertEqual(self.agent_ids(), [])
+        self.assertIn("No matching agents", self.page.locator("#agents-list").inner_text())
+        self.page.get_by_role("button", name="Filter done agents").click()
+        self.assertEqual(self.agent_ids(), ["p2", "p1", "p4"])
+
+    def test_state_filter_and_focused_count_survive_refresh_and_zero_count(self):
+        self.open()
+        self.page.get_by_role("button", name="Show all agents").click()
+        self.page.get_by_role("button", name="Filter blocked agents").click()
+        self.httpd.tree["panes"][3]["agent_status"] = "done"
+        self.page.evaluate("refreshTree()")
+        self.assertEqual(self.agent_ids(), [])
+        button = self.page.get_by_role("button", name="Filter blocked agents")
+        self.assertEqual(button.locator("strong").inner_text(), "0")
+        self.assertEqual(button.get_attribute("aria-pressed"), "true")
+        self.assertTrue(button.evaluate("el => el === document.activeElement"))
+        self.page.keyboard.press("Enter")
+        self.assertEqual(self.agent_ids(), ["p2", "p1", "p4"])
+
+    def test_unknown_filter_remains_clearable_when_last_unknown_changes_state(self):
+        self.add_agent_states()
+        self.open()
+        self.page.get_by_role("button", name="Show all agents").click()
+        self.page.get_by_role("button", name="Filter unknown agents").click()
+        next(p for p in self.httpd.tree["panes"] if p["pane_id"] == "p7")["agent_status"] = "idle"
+        self.page.evaluate("refreshTree()")
+        button = self.page.get_by_role("button", name="Filter unknown agents")
+        self.assertEqual(button.locator("strong").inner_text(), "0")
+        button.click()
+        self.assertEqual(len(self.agent_ids()), 6)
+
+    def test_state_filters_remain_available_in_short_keyboard_viewports(self):
+        self.open()
+        self.page.get_by_role("button", name="Show all agents").click()
+        for height in (280, 220):
+            self.page.evaluate("""height => {
+              Object.defineProperty(window.visualViewport, 'height', {configurable:true, value:height});
+              window.visualViewport.dispatchEvent(new Event('resize'));
+            }""", height)
+            button = self.page.get_by_role("button", name="Filter working agents")
+            button.scroll_into_view_if_needed()
+            button.click()
+            self.assertEqual(self.agent_ids(), ["p2", "p1"])
+            button.click()
+            self.assertEqual(self.agent_ids(), ["p2", "p1", "p4"])
+            self.page.locator('[data-agent-pane="p4"]').scroll_into_view_if_needed()
+            box = self.page.locator('[data-agent-pane="p4"]').bounding_box()
+            self.assertLessEqual(box["y"] + box["height"], height)
 
     def test_dismissal_preserves_pane_and_escape_never_closes_terminal(self):
         self.open()

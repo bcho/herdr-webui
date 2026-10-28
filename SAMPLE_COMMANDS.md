@@ -45,7 +45,9 @@ https://<machine>.<tailnet>.ts.net/
 ```
 
 Expect one focused terminal, **☰** for the space/tab/pane tree, and **Agents** for
-all agent statuses. Selecting a pane returns to its output without sending input.
+agents sorted Working → Blocked → Done → Idle. Tap a state count to filter;
+tap that same count again to show all. Selecting a pane returns to its output
+without sending input.
 Use **··· → Close pane** for confirmed removal, or **Ctrl-C ×2** to send two
 interrupts without removing the terminal. These controls affect the selected pane;
 only test them on a session you intend to interrupt or close.
