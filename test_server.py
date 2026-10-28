@@ -45,7 +45,7 @@ import server  # noqa: E402
 class ServerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.httpd = server.make_server(0)
+        cls.httpd = server.make_server(0, ["dashboard.example.ts.net"])
         cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
 
@@ -126,6 +126,30 @@ class ServerTest(unittest.TestCase):
         status, body = self.req("/api/action/close", {"pane": "w9:p9"})
         self.assertEqual(status, 502)
         self.assertEqual(json.loads(body)["error"], "boom")
+
+    def test_private_proxy_host_is_exact_and_keeps_csrf(self):
+        host = "dashboard.example.ts.net"
+        self.assertEqual(self.req("/", host=host)[0], 200)
+        self.assertEqual(self.req("/api/tree", host=host.upper() + ":443")[0], 200)
+        body = {"pane": "w1:p1", "text": "hi"}
+        self.assertEqual(self.req("/api/action/send", body, host=host, token="bad")[0], 403)
+        self.assertEqual(self.req("/api/action/send", body, host=host, token=None)[0], 403)
+        self.assertEqual(self.req("/api/action/send", body, host=host)[0], 200)
+        for bad in (host + ".evil.example", "evil." + host, "other.example.ts.net"):
+            self.assertEqual(self.req("/api/tree", host=bad)[0], 421)
+            self.assertEqual(self.req("/api/action/send", body, host=bad)[0], 421)
+        self.assertEqual(self.calls()[-1], ["pane", "run", "w1:p1", "hi"])
+
+    def test_default_server_stays_loopback_only(self):
+        httpd = server.make_server(0)
+        try:
+            self.assertEqual(httpd.server_address[0], "127.0.0.1")
+            self.assertEqual(httpd.allowed_hosts, {"127.0.0.1", "localhost"})
+        finally:
+            httpd.server_close()
+
+    def test_private_proxy_stays_loopback_only(self):
+        self.assertEqual(self.httpd.server_address[0], "127.0.0.1")
 
     def test_csrf_content_type_and_host_guards(self):
         self.assertEqual(self.req("/api/action/send", {"pane": "w1:p1", "text": "x"}, token="bad")[0], 403)

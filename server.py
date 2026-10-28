@@ -222,9 +222,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, json.dumps(data).encode(), "application/json")
 
     def _host_ok(self) -> bool:
-        # Defeat DNS rebinding: only accept loopback Host headers.
-        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
-        return host in ("127.0.0.1", "localhost")
+        # Defeat DNS rebinding; proxy hostnames must be explicitly configured.
+        host = (self.headers.get("Host") or "").split(":", 1)[0].lower()
+        return host in self.server.allowed_hosts
 
     def do_GET(self):
         if not self._host_ok():
@@ -277,15 +277,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "bad request"})
 
 
-def make_server(port: int) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+def make_server(port: int, allowed_hosts=()) -> ThreadingHTTPServer:
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    httpd.allowed_hosts = frozenset({"127.0.0.1", "localhost", *(h.lower() for h in allowed_hosts)})
+    return httpd
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8780")))
+    ap.add_argument("--allow-host", action="append", default=[], metavar="HOSTNAME",
+                    help="additional exact Host hostname for a trusted private reverse proxy (repeatable)")
     args = ap.parse_args()
-    httpd = make_server(args.port)
+    httpd = make_server(args.port, args.allow_host)
     print(f"Herdr web UI: http://127.0.0.1:{args.port}", flush=True)
     try:
         httpd.serve_forever()

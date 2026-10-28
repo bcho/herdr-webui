@@ -31,17 +31,77 @@ python3 server.py --port 9000
 HERDR_BIN=/path/to/herdr HERDR_TIMEOUT=20 python3 server.py
 ```
 
+## Private remote access (Tailscale)
+
+With Tailscale already installed and connected, use Serve for tailnet-only HTTPS:
+
+```bash
+HOST=$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')
+python3 server.py --allow-host "$HOST"
+# In another terminal:
+tailscale serve --bg --https=443 http://127.0.0.1:8780
+```
+
+On an iPhone connected to the same tailnet, open the HTTPS URL printed by Serve
+in Safari. Only devices allowed by your tailnet policy can connect; anyone with
+access to this endpoint can read and control your local terminals. Do not enable
+Funnel or forward a public port. The backend still listens only on loopback.
+
+### macOS service
+
+From this repository, create a per-user LaunchAgent using existing Python,
+Herdr, and Tailscale installations (no packages are installed):
+
+```bash
+python3 - <<'PY'
+import json, os, plistlib, shutil, subprocess, sys
+from pathlib import Path
+home, repo = Path.home(), Path.cwd()
+host = json.loads(subprocess.check_output(["tailscale", "status", "--json"]))["Self"]["DNSName"].rstrip(".")
+herdr = shutil.which("herdr")
+assert herdr and (repo / "server.py").is_file(), "Run from this repository with herdr on PATH"
+logs = home / "Library/Logs/herdr-webui"
+logs.mkdir(parents=True, exist_ok=True)
+agent = home / "Library/LaunchAgents/dev.herdr.webui.plist"
+agent.parent.mkdir(parents=True, exist_ok=True)
+config = {
+    "Label": "dev.herdr.webui",
+    "ProgramArguments": [sys.executable, "-u", str(repo / "server.py"), "--allow-host", host],
+    "WorkingDirectory": str(repo),
+    "EnvironmentVariables": {"HOME": str(home), "PATH": os.environ["PATH"], "HERDR_BIN": herdr},
+    "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 5,
+    "StandardOutPath": str(logs / "stdout.log"),
+    "StandardErrorPath": str(logs / "stderr.log"),
+}
+with agent.open("wb") as f:
+    plistlib.dump(config, f)
+agent.chmod(0o600)
+PY
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/dev.herdr.webui.plist"
+tailscale serve --bg --https=443 http://127.0.0.1:8780
+```
+
+Stop any manually started instance first so port 8780 is free. The service starts
+at login and restarts if the bridge exits. Herdr itself must already be running;
+the Mac must remain awake. Serve's `--bg` configuration persists across Tailscale
+restarts. After changing code, restart with
+`launchctl kickstart -k "gui/$(id -u)/dev.herdr.webui"`.
+
+See [SAMPLE_COMMANDS.md](SAMPLE_COMMANDS.md) for checks and troubleshooting.
+
 ## Security model
 
-This UI can type into your terminals, so it is deliberately local-only:
+This UI can type into your terminals, so it is deliberately loopback-bound:
 
-- Binds `127.0.0.1` only; rejects non-loopback `Host` headers (DNS-rebinding defense).
+- Binds `127.0.0.1` only; rejects non-loopback `Host` headers unless an exact hostname is opted in with `--allow-host` (DNS-rebinding defense).
 - Every mutation needs a per-process CSRF token embedded in the served page, plus `Content-Type: application/json`.
 - Herdr is invoked with argv lists (never a shell); IDs, key names, labels, and agent kinds are allow-listed.
 - Strict CSP (no external origins), `X-Frame-Options: DENY`, `no-store`.
 - Agent session file paths from the snapshot are never sent to the browser.
 
-Do not expose it beyond loopback. For remote use, tunnel: `ssh -L 8780:127.0.0.1:8780 host`.
+Do not bind it to a public or LAN interface. Use the private proxy above or an
+SSH tunnel: `ssh -L 8780:127.0.0.1:8780 host`. `--allow-host` does not add
+application authentication; use it only behind a trusted private proxy.
 
 ## API
 
