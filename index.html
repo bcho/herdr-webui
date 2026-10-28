@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="__CSRF_TOKEN__">
+<title>Herdr · Live Agent Sessions</title>
+<style>
+:root{
+  --bg0:#0b0e14;--bg1:#11151d;--bg2:#161b25;--bg3:#1d2330;--line:#262d3b;--line2:#323b4d;
+  --fg:#d7dce5;--fg2:#9aa3b2;--fg3:#646d7e;
+  --cyan:#3fc1e8;--green:#3ddc84;--amber:#f5b041;--red:#ff5d6c;--violet:#a78bfa;
+  --mono:"Fira Code","JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  --sans:Inter,-apple-system,"Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg0);color:var(--fg);font:13px/1.4 var(--sans)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+.mono{font-family:var(--mono)}
+::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px}::-webkit-scrollbar-track{background:transparent}
+.app{display:grid;grid-template-rows:56px 1fr;height:100vh}
+/* header */
+header{display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--bg1);border-bottom:1px solid var(--line)}
+.logo{display:flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--bg0);color:var(--cyan);font:700 15px var(--mono);letter-spacing:.5px}
+.crumbs{flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-family:var(--mono);color:var(--fg2);overflow-x:auto;white-space:nowrap;padding-left:10px;border-left:1px solid var(--line)}
+.crumbs .sep{color:var(--fg3)}
+.crumbs .cur{color:var(--fg)}
+.crumbs button{background:none;border:0;padding:2px 4px;border-radius:4px;color:inherit}
+.crumbs button:hover{background:var(--bg3);color:var(--fg)}
+.search{display:flex;align-items:center;gap:6px;border:1px solid var(--line2);background:var(--bg0);border-radius:8px;padding:0 10px;height:34px;width:260px}
+.search input{border:0;outline:0;background:transparent;width:100%;font-family:var(--mono);font-size:12px}
+.search:focus-within{border-color:var(--cyan)}
+.hbtn{height:34px;min-width:38px;padding:0 10px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.hbtn:hover{background:var(--bg3);color:var(--fg)}
+.hbtn.accent{color:var(--cyan);border-color:#1f5466;background:#0f2630}
+.hbtn.accent:hover{background:#13313d}
+.spin{animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+/* body */
+.body{display:grid;grid-template-columns:290px 1fr;min-height:0}
+.body.nosidebar{grid-template-columns:0 1fr}
+aside{display:flex;flex-direction:column;background:var(--bg1);border-right:1px solid var(--line);min-height:0;overflow:hidden}
+.side-h{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 10px;border-bottom:1px solid var(--line)}
+.side-h h3{margin:0;font:600 12px var(--mono);letter-spacing:1.5px;color:var(--fg2);text-transform:uppercase}
+.pill{white-space:nowrap;font:600 10px var(--mono);letter-spacing:1px;padding:3px 8px;border-radius:5px;border:1px solid var(--line2);background:var(--bg0);text-transform:uppercase}
+.tree{flex:1;overflow:auto;padding:8px}
+.node{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-family:var(--mono);font-size:12.5px;color:var(--fg2);user-select:none;white-space:nowrap}
+.node:hover{background:var(--bg2);color:var(--fg)}
+.node.active{background:#132634;color:var(--cyan);box-shadow:inset 2px 0 0 var(--cyan)}
+.node .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.node .meta{color:var(--fg3);font-size:11px}
+.node .count{font-size:10.5px;color:var(--fg2);background:var(--bg0);border:1px solid var(--line);border-radius:4px;padding:0 6px}
+.node .chev{width:12px;color:var(--fg3);transition:transform .15s;flex:none;text-align:center}
+.node.open>.chev{transform:rotate(90deg)}
+.node.host{color:var(--fg);font-weight:600}
+.kids{margin-left:14px;border-left:1px solid var(--line);padding-left:4px}
+.ico{width:14px;height:14px;flex:none;opacity:.85}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--fg3)}
+.s-working{background:var(--cyan);box-shadow:0 0 6px var(--cyan);animation:pulse 1.4s ease-in-out infinite}
+.s-blocked{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+.s-done{background:var(--green)}
+.s-idle{background:#5f8f74}
+.s-unknown{background:var(--fg3)}
+.s-online{background:var(--green);box-shadow:0 0 6px var(--green)}
+.s-offline{background:var(--red)}
+@keyframes pulse{50%{opacity:.35}}
+.side-f{border-top:1px solid var(--line);padding:12px 14px;font:11.5px var(--mono);color:var(--fg2);display:grid;gap:7px}
+.side-f .row{display:flex;justify-content:space-between;gap:8px}
+.side-f .k{color:var(--fg3);text-transform:uppercase;letter-spacing:1px}
+.bars{display:flex;height:5px;border-radius:3px;overflow:hidden;background:var(--bg3)}
+.bars span{display:block;height:100%}
+/* main */
+main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg0)}
+.tabbar{display:flex;align-items:flex-end;gap:2px;padding:8px 10px 0;background:var(--bg1);border-bottom:1px solid var(--line);overflow-x:auto;flex:none;min-height:46px}
+.tab{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;font:500 12.5px var(--mono);color:var(--fg2);background:none;white-space:nowrap}
+.tab:hover{color:var(--fg);background:var(--bg2)}
+.tab.active{color:var(--cyan);background:var(--bg0);border-color:var(--line2);position:relative;top:1px}
+.tab .count{font-size:10.5px;background:var(--bg3);border-radius:10px;padding:0 6px;color:var(--fg2)}
+.tab.newtab{color:var(--fg3)}
+.canvas-wrap{flex:1;min-height:0;padding:10px;position:relative}
+.canvas{position:relative;width:100%;height:100%}
+.empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--fg3);font-family:var(--mono);text-align:center}
+.pane{position:absolute;display:flex;flex-direction:column;background:var(--bg1);border:1px solid var(--line2);border-radius:10px;overflow:hidden;transition:border-color .15s,box-shadow .15s}
+.pane:hover{border-color:#3a4558}
+.pane.sel{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 0 18px #3fc1e826}
+.tuif{font:600 9px var(--mono);letter-spacing:1px;color:var(--violet);border:1px solid #4c3d7a;border-radius:4px;padding:1px 4px;white-space:nowrap}
+.ph{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--bg2);flex:none;min-width:0}
+.ph .title{font:700 13px var(--mono);color:var(--fg);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ph .agent{font:500 10.5px var(--mono);color:var(--violet);border:1px solid #3b3260;border-radius:4px;padding:0 5px}
+.badge{display:inline-flex;align-items:center;gap:5px;font:600 10.5px var(--mono);letter-spacing:.8px;text-transform:uppercase}
+.badge.working{color:var(--cyan)}.badge.blocked{color:var(--amber)}.badge.done{color:var(--green)}.badge.idle{color:#7fb894}.badge.unknown{color:var(--fg3)}
+.ibtn{border:0;background:none;color:var(--fg3);padding:2px 5px;border-radius:4px;font-size:13px;line-height:1}
+.ibtn:hover{color:var(--fg);background:var(--bg3)}
+.ibtn.danger:hover{color:var(--red)}
+.pb{flex:1;min-height:0;overflow:auto;padding:8px 10px;font:12px/1.45 var(--mono);white-space:pre;color:#c9d1dc;background:linear-gradient(#0d1118,#0b0e14)}
+.pf{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;border-top:1px solid var(--line);flex:none;font:italic 11.5px var(--mono);color:var(--fg3)}
+.pf .cwd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-style:normal}
+.btn{border:1px solid var(--line2);background:var(--bg2);color:var(--fg2);border-radius:6px;padding:4px 10px;font:500 12px var(--mono);white-space:nowrap}
+.btn:hover{color:var(--fg);background:var(--bg3)}
+.btn.cy{color:var(--cyan);border-color:#1f5466;background:#0f2630}
+.btn.cy:hover{background:#13313d}
+.btn.danger{color:var(--red);border-color:#5a2730;background:#24121a}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+/* dock */
+.dock{flex:none;height:44vh;min-height:180px;display:none;flex-direction:column;border-top:1px solid var(--line2);background:var(--bg1)}
+.dock.open{display:flex}
+.dock-resize{height:5px;cursor:ns-resize;background:transparent;margin-top:-3px}
+.dock-resize:hover{background:var(--cyan)}
+.dh{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);font-family:var(--mono)}
+.dh .title{font-weight:700;color:var(--fg)}
+.dh .pid{color:var(--fg3);font-size:11px}
+.dh .sp{flex:1}
+.term{flex:1;min-height:0;overflow:auto;padding:10px 12px;font:12.5px/1.45 var(--mono);white-space:pre;background:#090c11;color:#c9d1dc}
+.keys{display:flex;flex-wrap:wrap;gap:4px;padding:6px 12px;border-top:1px solid var(--line);background:var(--bg1)}
+.keys .btn{padding:2px 8px;font-size:11px}
+.dock form{display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--line);align-items:flex-end}
+.dock textarea{flex:1;resize:none;min-height:36px;max-height:140px;background:var(--bg0);border:1px solid var(--line2);border-radius:8px;padding:8px 10px;font:12.5px var(--mono);outline:0}
+.dock textarea:focus{border-color:var(--cyan)}
+select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;padding:7px 8px;font:12px var(--mono);outline:0}
+/* modal */
+.modal{position:fixed;inset:0;background:#000b;backdrop-filter:blur(3px);display:none;place-items:center;z-index:50}
+.modal.open{display:grid}
+.card{width:min(460px,92vw);background:var(--bg1);border:1px solid var(--line2);border-radius:12px;box-shadow:0 20px 60px #000a}
+.card h3{margin:0;padding:14px 16px;border-bottom:1px solid var(--line);font:600 14px var(--mono);color:var(--cyan);display:flex;justify-content:space-between}
+.card form{padding:14px 16px;display:grid;gap:12px}
+.card label{display:grid;gap:5px;font:11px var(--mono);color:var(--fg2);text-transform:uppercase;letter-spacing:1px}
+.card input,.card select{width:100%;background:var(--bg0);border:1px solid var(--line2);border-radius:7px;padding:8px 10px;font:12.5px var(--mono);outline:0;text-transform:none;letter-spacing:0}
+.card input:focus,.card select:focus{border-color:var(--cyan)}
+.card .acts{display:flex;justify-content:flex-end;gap:8px;padding-top:4px}
+.hint{font:11px var(--mono);color:var(--fg3)}
+/* toast */
+.toasts{position:fixed;right:16px;bottom:16px;display:grid;gap:8px;z-index:60}
+.toast{font:12px var(--mono);padding:9px 12px;border-radius:8px;border:1px solid var(--line2);background:var(--bg2);max-width:420px;box-shadow:0 8px 24px #0008}
+.toast.err{border-color:#5a2730;color:#ffb3bb}
+.toast.ok{border-color:#1f5a3d;color:#9ff0c4}
+.b{font-weight:700}.dim{opacity:.6}.it{font-style:italic}.ul{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"><svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2 2 7l10 5 10-5-10-5zm0 12.2L4.2 10.3 2 11.4l10 5 10-5-2.2-1.1L12 14.2zm0 4.2-7.8-3.9L2 15.6l10 5 10-5-2.2-1.1L12 18.4z"/></svg>HERDR</div>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="search"><span style="color:var(--fg3)">⌕</span><input id="filter" placeholder="Filter space, tab, pane… (⌘K)" autocomplete="off"></div>
+    <button class="hbtn accent" id="btn-spawn" title="New space / tab / agent">＋</button>
+    <button class="hbtn" id="btn-refresh" title="Refresh now"><svg id="refresh-ico" class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg></button>
+    <button class="hbtn" id="btn-max" title="Toggle sidebar">⛶</button>
+  </header>
+  <div class="body" id="body">
+    <aside>
+      <div class="side-h"><h3>Herdr Session</h3><span class="pill" id="active-pill" style="color:var(--green)">0 active</span></div>
+      <div class="tree" id="tree"></div>
+      <div class="side-f">
+        <div class="row"><span class="k">Local socket bridge</span><span id="conn" style="color:var(--fg3)">● connecting</span></div>
+        <div class="row"><span>Herdr</span><span id="ver">–</span></div>
+        <div class="row"><span>Snapshot latency</span><span id="lat" style="color:var(--cyan)">–</span></div>
+        <div class="row"><span>Spaces · Tabs · Panes</span><span id="counts">–</span></div>
+        <div class="bars" id="bars" title="agent status mix"></div>
+        <div class="row hint" id="legend"></div>
+      </div>
+    </aside>
+    <main>
+      <div class="tabbar" id="tabbar"></div>
+      <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
+      <section class="dock" id="dock">
+        <div class="dock-resize" id="dock-resize"></div>
+        <div class="dh">
+          <span class="dot" id="dock-dot"></span>
+          <span class="title" id="dock-title">–</span>
+          <span class="pid" id="dock-pid"></span>
+          <span class="badge" id="dock-badge"></span>
+          <span class="sp"></span>
+          <label class="hint"><input type="checkbox" id="dock-ansi" checked> color</label>
+          <button class="btn" id="dock-focus" title="Focus this pane in the Herdr TUI">Focus in Herdr</button>
+          <button class="ibtn" id="dock-close" title="Hide (Esc)">✕</button>
+        </div>
+        <div class="term" id="dock-term"></div>
+        <div class="keys" id="dock-keys"></div>
+        <form id="dock-form">
+          <select id="dock-mode" title="How input is delivered">
+            <option value="prompt">Prompt agent</option>
+            <option value="send">Type + Enter</option>
+            <option value="type">Type only</option>
+          </select>
+          <textarea id="dock-input" rows="1" placeholder="Message the agent… (Enter to send, Shift+Enter newline)"></textarea>
+          <button class="btn cy" type="submit">Send ➤</button>
+        </form>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div class="modal" id="spawn">
+  <div class="card">
+    <h3>Launch session <button class="ibtn" id="spawn-x">✕</button></h3>
+    <form id="spawn-form">
+      <label>Space<select id="sp-space"></select></label>
+      <label id="sp-space-label-row">New space label<input id="sp-space-label" placeholder="e.g. backend-refactor" maxlength="120"></label>
+      <label>Tab label<input id="sp-tab-label" placeholder="e.g. agent-repl" maxlength="120"></label>
+      <label>Agent<select id="sp-kind">
+        <option value="">— plain shell —</option>
+        <option>pi</option><option>claude</option><option>codex</option><option>opencode</option>
+        <option>gemini</option><option>copilot</option><option>cursor</option><option>amp</option>
+      </select></label>
+      <label>Agent name<input id="sp-name" placeholder="defaults to kind" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9:_.\-]*"></label>
+      <div class="hint">Created without stealing TUI focus. Agent start waits up to 30s for readiness.</div>
+      <div class="acts"><button type="button" class="btn" id="spawn-cancel">Cancel</button><button class="btn cy" type="submit" id="spawn-go">Launch</button></div>
+    </form>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+"use strict";
+const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+const $ = id => document.getElementById(id);
+const STATUSES = ["working","blocked","done","idle","unknown"];
+const STATUS_COLOR = {working:"var(--cyan)",blocked:"var(--amber)",done:"var(--green)",idle:"#5f8f74",unknown:"var(--fg3)"};
+const ICON = {
+  host:'<svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h18v6H3zm0 10h18v6H3zM6 6.5v1h2v-1zm0 10v1h2v-1z"/></svg>',
+  space:'<svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h7l2 2h9v12H3z"/></svg>',
+  tab:'<svg class="ico" viewBox="0 0 24 24" fill="currentColor"><path d="M3 4h8v5H3zm10 0h8v5h-8zM3 11h18v9H3z" opacity=".9"/></svg>',
+  pane:'<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 10 3 2-3 2m5 1h5"/></svg>',
+};
+
+const S = {tree:null, ws:null, tab:null, pane:null, filter:"", open:new Set(), outputs:new Map(), err:null, busy:false, dockStick:true};
+
+/* ---------------- utils ---------------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toast(msg, kind="ok"){const t=document.createElement("div");t.className="toast "+kind;t.textContent=msg;$("toasts").append(t);setTimeout(()=>t.remove(),kind==="err"?6000:2600);}
+async function getJSON(url){const r=await fetch(url,{cache:"no-store"});const d=await r.json().catch(()=>({error:r.statusText}));if(!r.ok)throw new Error(d.error||r.statusText);return d;}
+async function act(name, body){
+  const r=await fetch("/api/action/"+name,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":CSRF},body:JSON.stringify(body)});
+  const d=await r.json().catch(()=>({error:r.statusText}));if(!r.ok)throw new Error(d.error||r.statusText);return d.result;
+}
+const paneName = p => p.label || p.terminal_title_stripped || (p.agent ? p.agent : "shell");
+const st = x => STATUSES.includes(x) ? x : "unknown";
+const wsName = w => w.label || ("space "+w.number);
+const tabName = t => t.label || ("tab "+t.number);
+function byId(list,key,id){return list.find(x=>x[key]===id);}
+function getWs(id){return S.tree && byId(S.tree.workspaces,"workspace_id",id);}
+function getTab(id){return S.tree && byId(S.tree.tabs,"tab_id",id);}
+function getPane(id){return S.tree && byId(S.tree.panes,"pane_id",id);}
+function tabsOf(ws){return S.tree.tabs.filter(t=>t.workspace_id===ws).sort((a,b)=>a.number-b.number);}
+function panesOf(tab){return S.tree.panes.filter(p=>p.tab_id===tab);}
+
+/* ---------------- ANSI → HTML ---------------- */
+const BASE16=["#1c2028","#ff5d6c","#3ddc84","#f5b041","#4f9cff","#c678dd","#3fc1e8","#c9d1dc","#5c6370","#ff7a85","#6ef0a4","#ffd27a","#7ab4ff","#d79bf0","#7fdcf5","#ffffff"];
+function c256(n){if(n<16)return BASE16[n];if(n>=232){const v=8+(n-232)*10;return `rgb(${v},${v},${v})`;}n-=16;const f=v=>v?v*40+55:0;return `rgb(${f(Math.floor(n/36))},${f(Math.floor(n/6)%6)},${f(n%6)})`;}
+function ansiToHtml(src){
+  let out="",fg=null,bg=null,b=false,d=false,it=false,ul=false,inv=false,open=false;
+  const text = src.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g,"").replace(/\x1b\[[0-9;?]*[A-La-ln-z]/g,"").replace(/\x1b[()][A-Za-z0-9]/g,"").replace(/\r/g,"");
+  const re=/\x1b\[([0-9;]*)m/g;let last=0,m;
+  const flush=s=>{if(!s)return;const f=inv?(bg||"#0b0e14"):fg,g=inv?(fg||"#c9d1dc"):bg;const cls=[b&&"b",d&&"dim",it&&"it",ul&&"ul"].filter(Boolean).join(" ");
+    const style=(f?`color:${f};`:"")+(g?`background:${g};`:"");out+=(style||cls)?`<span${cls?` class="${cls}"`:""}${style?` style="${style}"`:""}>${esc(s)}</span>`:esc(s);};
+  while((m=re.exec(text))){flush(text.slice(last,m.index));last=re.lastIndex;
+    const p=m[1]===""?[0]:m[1].split(";").map(Number);
+    for(let i=0;i<p.length;i++){const c=p[i];
+      if(c===0){fg=bg=null;b=d=it=ul=inv=false;}else if(c===1)b=true;else if(c===2)d=true;else if(c===3)it=true;else if(c===4)ul=true;else if(c===7)inv=true;
+      else if(c===22){b=d=false}else if(c===23)it=false;else if(c===24)ul=false;else if(c===27)inv=false;
+      else if(c>=30&&c<=37)fg=BASE16[c-30];else if(c>=90&&c<=97)fg=BASE16[c-82];else if(c===39)fg=null;
+      else if(c>=40&&c<=47)bg=BASE16[c-40];else if(c>=100&&c<=107)bg=BASE16[c-92];else if(c===49)bg=null;
+      else if(c===38||c===48){let col=null;if(p[i+1]===5){col=c256(p[i+2]|0);i+=2;}else if(p[i+1]===2){col=`rgb(${p[i+2]|0},${p[i+3]|0},${p[i+4]|0})`;i+=4;}if(c===38)fg=col;else bg=col;}
+    }}
+  flush(text.slice(last));return out;
+}
+const stripAnsi = s => s.replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g,"").replace(/\x1b\[[0-9;?]*[A-Za-z]/g,"").replace(/\r/g,"");
+
+/* ---------------- data ---------------- */
+async function refreshTree(manual=false){
+  if(S.busy)return;S.busy=true;if(manual)$("refresh-ico").classList.add("spin");
+  try{
+    S.tree=await getJSON("/api/tree");S.err=null;
+    // keep selection valid; default to the TUI's focused space/tab
+    if(!getWs(S.ws)){S.ws=S.tree.focused.workspace||S.tree.workspaces[0]?.workspace_id||null;S.tab=null;if(S.ws)S.open.add(S.ws);}
+    if(!getTab(S.tab)||getTab(S.tab).workspace_id!==S.ws){const w=getWs(S.ws);S.tab=(w&&getTab(w.active_tab_id))?w.active_tab_id:(S.ws?tabsOf(S.ws)[0]?.tab_id:null);}
+    if(S.pane&&!getPane(S.pane)){toast(`pane ${S.pane} is gone`,"err");closeDock();}
+  }catch(e){S.err=e.message;}
+  finally{S.busy=false;$("refresh-ico").classList.remove("spin");render();}
+}
+
+const reading=new Set();
+async function readPane(id,{lines=60,ansi=false}={}){
+  if(reading.has(id+ansi))return;reading.add(id+ansi);
+  try{const d=await getJSON(`/api/read?pane=${encodeURIComponent(id)}&lines=${lines}&ansi=${ansi?1:0}`);return d.text;}
+  catch(e){return `⚠ ${e.message}`;}
+  finally{reading.delete(id+ansi);}
+}
+async function pollPanes(){
+  if(!S.tree||!S.tab||document.hidden)return;
+  const ps=panesOf(S.tab);const lay=layoutOf(S.tab);
+  await Promise.all(ps.map(async p=>{
+    const r=lay?.panes.find(x=>x.pane_id===p.pane_id)?.rect;
+    const txt=await readPane(p.pane_id,{lines:Math.min(Math.max((r?.height||40),20),200)});
+    if(txt===undefined)return;S.outputs.set(p.pane_id,txt);
+    const el=document.querySelector(`.pane[data-id="${CSS.escape(p.pane_id)}"] .pb`);
+    if(el){const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<30;el.textContent=stripAnsi(txt);if(atBottom)el.scrollTop=el.scrollHeight;}
+  }));
+}
+async function pollDock(){
+  if(!S.pane||document.hidden)return;
+  const ansi=$("dock-ansi").checked;const txt=await readPane(S.pane,{lines:400,ansi});if(txt===undefined)return;
+  const el=$("dock-term");const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<30;
+  el.innerHTML=ansi?ansiToHtml(txt):esc(txt);if(atBottom||S.dockStick){el.scrollTop=el.scrollHeight;S.dockStick=false;}
+}
+function layoutOf(tab){return S.tree?.layouts.find(l=>l.tab_id===tab);}
+
+/* ---------------- filter ---------------- */
+function matches(...vals){const q=S.filter;return !q||vals.some(v=>String(v??"").toLowerCase().includes(q));}
+function paneMatch(p){return matches(paneName(p),p.agent,p.cwd,p.pane_id,p.agent_status);}
+function tabMatch(t){return matches(tabName(t),t.tab_id)||panesOf(t.tab_id).some(paneMatch);}
+function wsMatch(w){return matches(wsName(w),w.workspace_id)||tabsOf(w.workspace_id).some(tabMatch);}
+
+/* ---------------- render ---------------- */
+function render(){renderSide();renderCrumbs();renderTabs();renderCanvas();renderDockHeader();}
+
+function renderSide(){
+  const t=S.tree,el=$("tree");
+  const online=!!t&&!S.err;
+  $("conn").innerHTML=online?'<span style="color:var(--green)">● CONNECTED</span>':`<span style="color:var(--red)" title="${esc(S.err||"")}">● ${t?"STALE":"OFFLINE"}</span>`;
+  if(!t){el.innerHTML=`<div class="hint" style="padding:10px">${S.err?esc(S.err):"Loading…"}</div>`;return;}
+  $("ver").textContent=`v${t.version} · proto ${t.protocol}`;$("lat").textContent=`${t.latency_ms} ms`;
+  $("counts").textContent=`${t.workspaces.length} · ${t.tabs.length} · ${t.panes.length}`;
+  const agents=t.panes.filter(p=>p.agent);const cnt=Object.fromEntries(STATUSES.map(s=>[s,agents.filter(p=>st(p.agent_status)===s).length]));
+  $("active-pill").textContent=`${cnt.working} active`;$("active-pill").title=`${agents.length} agents`;
+  $("bars").innerHTML=agents.length?STATUSES.map(s=>cnt[s]?`<span style="width:${cnt[s]/agents.length*100}%;background:${STATUS_COLOR[s]}"></span>`:"").join(""):"";
+  $("legend").innerHTML=STATUSES.filter(s=>cnt[s]).map(s=>`<span><span style="color:${STATUS_COLOR[s]}">●</span> ${s} ${cnt[s]}</span>`).join(" ");
+  let h=`<div class="node host"><span class="dot ${online?"s-online":"s-offline"}"></span>${ICON.host}<span class="name">${esc(t.host)}</span><span class="meta">local</span></div><div class="kids">`;
+  for(const w of [...t.workspaces].sort((a,b)=>a.number-b.number)){
+    if(!wsMatch(w))continue;
+    const open=S.open.has(w.workspace_id)||!!S.filter;
+    h+=`<div class="node ${open?"open":""} ${w.workspace_id===S.ws?"active":""}" data-ws="${esc(w.workspace_id)}"><span class="chev" data-toggle="${esc(w.workspace_id)}">›</span>${ICON.space}<span class="name">${esc(wsName(w))}</span><span class="dot s-${st(w.agent_status)}" title="${esc(w.agent_status)}"></span><span class="count">${w.pane_count}</span></div>`;
+    if(!open)continue;
+    h+=`<div class="kids">`;
+    for(const tb of tabsOf(w.workspace_id)){
+      if(!tabMatch(tb))continue;
+      h+=`<div class="node ${tb.tab_id===S.tab?"active":""}" data-tab="${esc(tb.tab_id)}" data-tabws="${esc(w.workspace_id)}"><span class="chev"></span>${ICON.tab}<span class="name">${esc(tabName(tb))}</span><span class="dot s-${st(tb.agent_status)}"></span><span class="count">${tb.pane_count}</span></div>`;
+      h+=`<div class="kids">`;
+      for(const p of panesOf(tb.tab_id)){
+        if(!paneMatch(p)&&S.filter&&!matches(tabName(tb),wsName(w)))continue;
+        h+=`<div class="node ${p.pane_id===S.pane?"active":""}" data-pane="${esc(p.pane_id)}" title="${esc(p.cwd||"")}">${ICON.pane}<span class="name">${esc(paneName(p))}</span>${p.agent?`<span class="meta">${esc(p.agent)}</span>`:""}<span class="dot s-${st(p.agent_status)}"></span></div>`;
+      }
+      h+=`</div>`;
+    }
+    h+=`</div>`;
+  }
+  el.innerHTML=h+"</div>";
+}
+
+function renderCrumbs(){
+  const t=S.tree;if(!t){$("crumbs").innerHTML="";return;}
+  const w=getWs(S.ws),tb=getTab(S.tab),p=getPane(S.pane);
+  const parts=[`<button data-crumb="host">${ICON.host} ${esc(t.host)}</button>`];
+  if(w)parts.push(`<button data-crumb="ws">${ICON.space} ${esc(wsName(w))}</button>`);
+  if(tb)parts.push(`<button data-crumb="tab">${ICON.tab} ${esc(tabName(tb))}</button>`);
+  if(p)parts.push(`<span class="cur">${ICON.pane} ${esc(paneName(p))}</span>`);
+  $("crumbs").innerHTML=parts.join('<span class="sep">›</span>');
+}
+
+function renderTabs(){
+  const el=$("tabbar");if(!S.tree||!S.ws){el.innerHTML="";return;}
+  el.innerHTML=tabsOf(S.ws).map(t=>`<button class="tab ${t.tab_id===S.tab?"active":""}" data-tab="${esc(t.tab_id)}" title="${esc(t.tab_id)}"><span class="dot s-${st(t.agent_status)}"></span>›_ ${esc(tabName(t))}<span class="count">${t.pane_count}</span></button>`).join("")
+    +`<button class="tab newtab" id="tab-new" title="New tab in this space">＋</button>`;
+}
+
+function renderCanvas(){
+  const el=$("canvas");
+  if(!S.tree){el.innerHTML=`<div class="empty">${S.err?"⚠ "+esc(S.err):"Connecting to Herdr…"}</div>`;return;}
+  if(!S.tab){el.innerHTML=`<div class="empty">No tab selected</div>`;return;}
+  const ps=panesOf(S.tab),lay=layoutOf(S.tab);
+  const area=lay?.area||{x:0,y:0,width:1,height:1};
+  // keep existing nodes (preserve scroll), rebuild only when the pane set/geometry changed
+  const sig=S.tab+"|"+ps.map(p=>p.pane_id+":"+JSON.stringify(lay?.panes.find(x=>x.pane_id===p.pane_id)?.rect||null)).join(",");
+  if(el.dataset.sig!==sig){
+    el.dataset.sig=sig;el.innerHTML="";
+    ps.forEach((p,i)=>{
+      const r=lay?.panes.find(x=>x.pane_id===p.pane_id)?.rect;
+      const box=r?{l:(r.x-area.x)/area.width,t:(r.y-area.y)/area.height,w:r.width/area.width,h:r.height/area.height}:{l:0,t:i/ps.length,w:1,h:1/ps.length};
+      const d=document.createElement("div");d.className="pane";d.dataset.id=p.pane_id;
+      Object.assign(d.style,{left:`calc(${box.l*100}% + 3px)`,top:`calc(${box.t*100}% + 3px)`,width:`calc(${box.w*100}% - 6px)`,height:`calc(${box.h*100}% - 6px)`});
+      d.innerHTML=`<div class="ph"></div><div class="pb"></div><div class="pf"><span class="cwd"></span><button class="btn cy" data-interact>Interact ›</button></div>`;
+      d.querySelector(".pb").textContent=stripAnsi(S.outputs.get(p.pane_id)||"");
+      el.append(d);
+    });
+    if(!ps.length)el.innerHTML=`<div class="empty">Tab has no panes</div>`;
+  }
+  for(const p of ps){
+    const d=el.querySelector(`.pane[data-id="${CSS.escape(p.pane_id)}"]`);if(!d)continue;
+    const s=st(p.agent_status);
+    d.classList.toggle("sel",p.pane_id===S.pane);
+    d.querySelector(".ph").innerHTML=`${ICON.pane}<span class="title" title="${esc(paneName(p))}">${esc(paneName(p))}</span>${p.agent?`<span class="agent">${esc(p.agent)}</span>`:""}${p.pane_id===S.tree.focused.pane?'<span class="tuif" title="Focused in the Herdr TUI">TUI</span>':""}<span class="badge ${s}"><span class="dot s-${s}"></span>${s}</span>
+      <button class="ibtn" data-split="right" title="Split right">◫</button><button class="ibtn" data-split="down" title="Split down">⊟</button><button class="ibtn danger" data-close title="Close pane">✕</button>`;
+    d.querySelector(".cwd").textContent=(p.foreground_cwd||p.cwd||"").replace(/^\/Users\/[^/]+/,"~")+"  ·  "+p.pane_id;
+  }
+}
+
+function renderDockHeader(){
+  const p=S.pane&&getPane(S.pane);if(!p)return;
+  const s=st(p.agent_status);
+  $("dock-title").textContent=paneName(p);$("dock-pid").textContent=`${p.pane_id}${p.agent?" · "+p.agent:""}`;
+  $("dock-dot").className="dot s-"+s;$("dock-badge").className="badge "+s;$("dock-badge").textContent=s;
+  const mode=$("dock-mode");mode.options[0].disabled=!p.agent;if(!p.agent&&mode.value==="prompt")mode.value="send";
+  $("dock-input").placeholder=p.agent?(s==="blocked"?"Agent is BLOCKED — answer with keys or Type + Enter":"Message the agent… (Enter to send, Shift+Enter newline)"):"Type a shell command… (Enter to send)";
+}
+
+/* ---------------- selection ---------------- */
+function selectWs(id){S.ws=id;S.open.add(id);const w=getWs(id);S.tab=(w&&getTab(w.active_tab_id))?w.active_tab_id:tabsOf(id)[0]?.tab_id;render();pollPanes();}
+function selectTab(id){const t=getTab(id);if(!t)return;S.ws=t.workspace_id;S.tab=id;render();pollPanes();}
+function openDock(id){
+  const p=getPane(id);if(!p)return;
+  if(S.tab!==p.tab_id){S.ws=p.workspace_id;S.tab=p.tab_id;S.open.add(p.workspace_id);}
+  if(S.pane!==id){S.pane=id;S.dockStick=true;$("dock-term").innerHTML='<span class="dim">reading terminal…</span>';$("dock-mode").value=p.agent?"prompt":"send";}
+  history.replaceState(null,"","#pane="+encodeURIComponent(id));
+  $("dock").classList.add("open");render();pollDock();$("dock-input").focus();
+}
+function closeDock(){S.pane=null;$("dock").classList.remove("open");history.replaceState(null,"",location.pathname);render();}
+
+/* ---------------- events ---------------- */
+$("tree").addEventListener("click",e=>{
+  const tog=e.target.closest("[data-toggle]");if(tog){const id=tog.dataset.toggle;S.open.has(id)?S.open.delete(id):S.open.add(id);renderSide();return;}
+  const n=e.target.closest(".node");if(!n)return;
+  if(n.dataset.pane)openDock(n.dataset.pane);else if(n.dataset.tab)selectTab(n.dataset.tab);else if(n.dataset.ws)selectWs(n.dataset.ws);
+});
+$("crumbs").addEventListener("click",e=>{const b=e.target.closest("[data-crumb]");if(!b)return;closeDock();if(b.dataset.crumb==="ws")selectWs(S.ws);});
+$("tabbar").addEventListener("click",e=>{if(e.target.closest("#tab-new"))return openSpawn(S.ws);const b=e.target.closest("[data-tab]");if(b)selectTab(b.dataset.tab);});
+$("canvas").addEventListener("click",async e=>{
+  const d=e.target.closest(".pane");if(!d)return;const id=d.dataset.id;
+  const sp=e.target.closest("[data-split]");
+  if(sp){try{await act("split",{pane:id,direction:sp.dataset.split});toast("pane split");refreshTree();}catch(x){toast(x.message,"err");}return;}
+  if(e.target.closest("[data-close]")){const p=getPane(id);if(!confirm(`Close pane "${paneName(p)}" (${id})?${p?.agent?`\nThis kills the running ${p.agent} agent.`:""}`))return;
+    try{await act("close",{pane:id});toast("pane closed");if(S.pane===id)closeDock();refreshTree();}catch(x){toast(x.message,"err");}return;}
+  openDock(id);
+});
+$("dock-close").onclick=closeDock;
+$("dock-ansi").onchange=()=>pollDock();
+$("dock-focus").onclick=async()=>{const p=getPane(S.pane);if(!p)return;try{await act("focus",{pane:p.pane_id,tab:p.tab_id,agent:!!p.agent});toast("focused in Herdr TUI");refreshTree();}catch(x){toast(x.message,"err");}};
+const KEYS=[["Enter","enter"],["Esc","esc"],["Ctrl-C","ctrl+c"],["Tab","tab"],["↑","up"],["↓","down"],["←","left"],["→","right"],["y","y"],["n","n"],["1","1"],["2","2"],["3","3"],["Ctrl-D","ctrl+d"],["Ctrl-L","ctrl+l"]];
+$("dock-keys").innerHTML='<span class="hint" style="align-self:center;margin-right:4px">keys:</span>'+KEYS.map(([l,k])=>`<button class="btn" data-key="${esc(k)}">${esc(l)}</button>`).join("");
+$("dock-keys").addEventListener("click",async e=>{const b=e.target.closest("[data-key]");if(!b||!S.pane)return;try{await act("keys",{pane:S.pane,keys:[b.dataset.key]});S.dockStick=true;setTimeout(pollDock,250);}catch(x){toast(x.message,"err");}});
+$("dock-input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("dock-form").requestSubmit();}});
+$("dock-input").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,140)+"px";});
+$("dock-form").addEventListener("submit",async e=>{
+  e.preventDefault();const inp=$("dock-input"),text=inp.value,mode=$("dock-mode").value;if(!S.pane||(!text&&mode!=="send"))return;
+  try{
+    if(mode==="prompt")await act("prompt",{pane:S.pane,text});
+    else await act("send",{pane:S.pane,text,enter:mode==="send"});
+    inp.value="";inp.style.height="auto";S.dockStick=true;setTimeout(pollDock,300);setTimeout(refreshTree,600);
+  }catch(x){toast(x.message,"err");}
+});
+// dock resize
+$("dock-resize").addEventListener("mousedown",e=>{e.preventDefault();const startY=e.clientY,startH=$("dock").offsetHeight;
+  const mv=ev=>{$("dock").style.height=Math.max(160,Math.min(window.innerHeight-160,startH+startY-ev.clientY))+"px";};
+  const up=()=>{removeEventListener("mousemove",mv);removeEventListener("mouseup",up);};addEventListener("mousemove",mv);addEventListener("mouseup",up);});
+$("filter").addEventListener("input",e=>{S.filter=e.target.value.trim().toLowerCase();renderSide();});
+$("btn-refresh").onclick=()=>refreshTree(true).then(pollPanes);
+$("btn-max").onclick=()=>$("body").classList.toggle("nosidebar");
+addEventListener("keydown",e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();$("filter").focus();$("filter").select();}
+  if(e.key==="Escape"){if($("spawn").classList.contains("open"))closeSpawn();else if(document.activeElement===$("filter")){$("filter").value="";S.filter="";renderSide();$("filter").blur();}else if(S.pane)closeDock();}
+});
+
+/* ---------------- spawn ---------------- */
+function openSpawn(ws){
+  if(!S.tree)return;
+  $("sp-space").innerHTML=`<option value="">＋ New space</option>`+[...S.tree.workspaces].sort((a,b)=>a.number-b.number).map(w=>`<option value="${esc(w.workspace_id)}">${esc(wsName(w))}</option>`).join("");
+  $("sp-space").value=ws||"";syncSpawn();$("spawn").classList.add("open");($("sp-space").value?$("sp-tab-label"):$("sp-space-label")).focus();
+}
+function closeSpawn(){$("spawn").classList.remove("open");}
+function syncSpawn(){$("sp-space-label-row").style.display=$("sp-space").value?"none":"";}
+$("sp-space").onchange=syncSpawn;
+$("btn-spawn").onclick=()=>openSpawn("");
+$("spawn-x").onclick=$("spawn-cancel").onclick=closeSpawn;
+$("spawn").addEventListener("click",e=>{if(e.target===$("spawn"))closeSpawn();});
+$("spawn-form").addEventListener("submit",async e=>{
+  e.preventDefault();const go=$("spawn-go");go.disabled=true;go.textContent=$("sp-kind").value?"Starting agent…":"Creating…";
+  try{
+    const res=await act("spawn",{workspace:$("sp-space").value||null,space_label:$("sp-space-label").value.trim()||null,tab_label:$("sp-tab-label").value.trim()||null,kind:$("sp-kind").value||null,name:$("sp-name").value.trim()||null});
+    closeSpawn();$("spawn-form").reset();toast(`launched ${res.pane_id}`);
+    await refreshTree();if(res.pane_id&&getPane(res.pane_id))openDock(res.pane_id);
+  }catch(x){toast(x.message,"err");refreshTree();}
+  finally{go.disabled=false;go.textContent="Launch";}
+});
+
+/* ---------------- loops ---------------- */
+const deep=new URLSearchParams(location.hash.slice(1)).get("pane");
+async function loop(){
+  await refreshTree();
+  if(deep&&!S.pane&&getPane(deep)&&!loop.done){loop.done=1;openDock(deep);}
+  pollPanes();
+  setTimeout(loop,2000);
+}
+setInterval(()=>{if(S.pane)pollDock();},1000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){refreshTree().then(pollPanes);}});
+loop();
+</script>
+</body>
+</html>
