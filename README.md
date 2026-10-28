@@ -36,8 +36,14 @@ output and direct agent interaction from the browser.
   Selecting a pane does not open the phone keyboard or send a command.
 - Input modes remain **Prompt agent**, **Type + Enter**, and **Type only**.
   Blocked agents default to **Type + Enter** so approval replies reach the terminal.
-- **···** contains refresh, ANSI color, and the explicit **Focus in Herdr** action.
-  Normal navigation never changes the TUI's focus. Use **New session** in the
+- **···** contains **Close pane**, **Ctrl-C ×2**, refresh, ANSI color, and the
+  explicit **Focus in Herdr** action. Close asks for confirmation and removes
+  the focused terminal, killing any agent inside it. To close another pane,
+  select it from **☰** or **Agents** first, then choose **Close pane**.
+- **Ctrl-C ×2** also appears beside Ctrl-C in the terminal key row. It sends two
+  interrupts to the selected pane without closing it; agents that use double
+  Ctrl-C to exit can return to the shell. Exit behavior depends on the agent.
+- Normal navigation never changes the TUI's focus. Use **New session** in the
   navigation drawer to launch a session.
 - Terminal output scrolls independently; viewport sizing follows the on-screen
   keyboard. Refresh the page after updating/restarting the service.

@@ -136,7 +136,7 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
 .b{font-weight:700}.dim{opacity:.6}.it{font-style:italic}.ul{text-decoration:underline}
 /* Phone UI: the existing inspector becomes the single focused terminal. */
 [hidden]{display:none!important}
-.mobile-only,.short-only{display:none}
+.mobile-only,.short-only,.mobile-key{display:none}
 .agents-view{display:none}
 @media(max-width:900px){
   html,body{overflow:hidden;overscroll-behavior:none}
@@ -187,6 +187,7 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
   .dock .keys{gap:6px;padding:8px 12px;flex-wrap:nowrap;overflow-x:auto;order:3;flex:none;padding-bottom:max(8px,env(safe-area-inset-bottom))}
   .keys .hint{display:none}
   .keys .btn{min-height:34px;padding:0 11px;flex:none;font-size:11px}
+  .keys .mobile-key{display:inline-flex;align-items:center}
   .dock form{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:7px;padding:8px 12px;order:2;flex:none}
   .dock form select{grid-column:1/-1;width:100%;height:34px;font-size:16px;padding:3px 6px;border:0;background:transparent;color:var(--fg2)}
   .dock textarea{font-size:16px;line-height:20px;min-height:44px;max-height:100px;padding:11px 10px}
@@ -218,7 +219,7 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
   .short-phone .app{grid-template-rows:44px minmax(0,1fr)}
   .short-phone .mobile-context{display:none}
   .short-phone .short-only{display:grid}
-  .short-phone .mobile-actions{position:absolute;top:0;left:0;right:0;z-index:20}
+  .short-phone .mobile-actions{position:absolute;top:0;left:0;right:0;z-index:20;max-height:100%;overflow:auto}
   .short-phone .term{padding:4px 12px}
   .short-phone .dock textarea{max-height:44px}
   .short-phone .dock form{padding:4px 12px;gap:4px}
@@ -273,7 +274,7 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
     </aside>
     <main id="main-content">
       <div class="mobile-only mobile-context" id="mobile-context" hidden><span class="kind agent" id="mobile-kind"></span><span class="badge" id="mobile-status"></span><span class="connection" id="mobile-live"></span><button class="mobile-icon" id="mobile-more" aria-label="Pane actions" aria-expanded="false" aria-controls="mobile-actions">···</button></div>
-      <div class="mobile-only mobile-actions" id="mobile-actions" hidden><button class="btn" id="mobile-refresh">Refresh</button><button class="btn" id="mobile-focus">Focus in Herdr</button><label class="hint"><input type="checkbox" id="mobile-color" checked> Color</label></div>
+      <div class="mobile-only mobile-actions" id="mobile-actions" hidden><button class="btn" id="mobile-refresh">Refresh</button><button class="btn" id="mobile-focus">Focus in Herdr</button><button class="btn" id="mobile-interrupt" title="Send Ctrl-C twice to the current pane without closing it">Ctrl-C ×2</button><button class="btn danger" id="mobile-close">Close pane</button><label class="hint"><input type="checkbox" id="mobile-color" checked> Color</label></div>
       <div class="mobile-only mobile-empty" id="mobile-empty"><span id="mobile-empty-text">Connecting to Herdr…</span><button class="btn cy" id="mobile-empty-nav">Choose a pane</button></div>
       <div class="tabbar" id="tabbar"></div>
       <div class="canvas-wrap"><div class="canvas" id="canvas"></div></div>
@@ -350,6 +351,8 @@ const S = {tree:null, ws:null, tab:null, pane:null, filter:"", open:new Set(), o
 const phone = matchMedia("(max-width:900px)");
 let mobileView = null, mobileSelected = false, autoMobileDock = false;
 const drafts = new Map();
+const closingPanes = new Set();
+let interruptBusy = false;
 
 /* ---------------- utils ---------------- */
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -552,6 +555,21 @@ function openDock(id,{autofocus=true}={}){
 function defaultInputMode(p){return p.agent&&!(phone.matches&&st(p.agent_status)==="blocked")?"prompt":"send";}
 function saveDraft(){if(S.pane)drafts.set(S.pane,{text:$("dock-input").value,mode:$("dock-mode").value});}
 function closeDock(){saveDraft();S.pane=null;$("dock").classList.remove("open");history.replaceState(null,"",location.pathname);render();}
+async function closePane(id){
+  const p=getPane(id);if(!p||closingPanes.has(id))return;
+  if(!confirm(`Close pane "${paneName(p)}" (${id})?${p.agent?`\nThis kills the running ${p.agent} agent.`:""}\nThe terminal pane will be removed. To interrupt the agent without closing the pane, use Ctrl-C ×2 instead.`))return;
+  closingPanes.add(id);renderMobile();
+  try{await act("close",{pane:id});toast("pane closed");if(S.pane===id)closeDock();await refreshTree();}
+  catch(e){toast(e.message,"err");}
+  finally{closingPanes.delete(id);renderMobile();}
+}
+async function interruptTwice(){
+  const pane=S.pane;if(!pane||interruptBusy)return;
+  interruptBusy=true;$("mobile-interrupt").disabled=true;document.querySelector("[data-interrupt-twice]").disabled=true;
+  try{await act("keys",{pane,keys:["ctrl+c","ctrl+c"]});toast("Sent Ctrl-C twice; pane kept open");if(S.pane===pane)S.dockStick=true;setTimeout(pollDock,250);setTimeout(refreshTree,600);}
+  catch(e){toast(e.message,"err");}
+  finally{interruptBusy=false;$("mobile-interrupt").disabled=!getPane(S.pane);document.querySelector("[data-interrupt-twice]").disabled=false;}
+}
 
 /* ---------------- phone navigation ---------------- */
 function mobilePaneForTab(){
@@ -604,6 +622,7 @@ function renderMobile(){
   $("mobile-attention").hidden=!blocked;
   $("mobile-agents").title=blocked?`${blocked} blocked · ${agents.length} agents`:`${agents.length} agents`;
   $("mobile-context").hidden=!p;$("mobile-empty").hidden=!!p;
+  $("mobile-close").disabled=!p||closingPanes.has(S.pane);$("mobile-interrupt").disabled=!p||interruptBusy;
   $("mobile-empty-text").textContent=S.err?`Connection unavailable: ${S.err}`:S.tree?"No panes in this tab. Choose another tab or launch a session.":"Connecting to Herdr…";
   const connected=S.tree&&!S.err;
   $("mobile-connection").textContent=connected?"● Connected":S.tree?"● Stale":"● Offline";
@@ -658,6 +677,8 @@ $("mobile-more").onclick=()=>{const el=$("mobile-actions");el.hidden=!el.hidden;
 $("mobile-header-more").onclick=()=>$("mobile-more").click();
 $("mobile-refresh").onclick=()=>refreshTree(true).then(pollDock);
 $("mobile-focus").onclick=()=>$("dock-focus").click();
+$("mobile-close").onclick=()=>closePane(S.pane);
+$("mobile-interrupt").onclick=interruptTwice;
 $("mobile-color").onchange=()=>{$("dock-ansi").checked=$("mobile-color").checked;pollDock();};
 $("tree").addEventListener("keydown",e=>{if(phone.matches&&(e.key==="Enter"||e.key===" ")&&e.target.matches(".node,[data-toggle]")){e.preventDefault();e.target.click();}});
 $("tree").addEventListener("click",e=>{
@@ -671,16 +692,15 @@ $("canvas").addEventListener("click",async e=>{
   const d=e.target.closest(".pane");if(!d)return;const id=d.dataset.id;
   const sp=e.target.closest("[data-split]");
   if(sp){try{await act("split",{pane:id,direction:sp.dataset.split});toast("pane split");refreshTree();}catch(x){toast(x.message,"err");}return;}
-  if(e.target.closest("[data-close]")){const p=getPane(id);if(!confirm(`Close pane "${paneName(p)}" (${id})?${p?.agent?`\nThis kills the running ${p.agent} agent.`:""}`))return;
-    try{await act("close",{pane:id});toast("pane closed");if(S.pane===id)closeDock();refreshTree();}catch(x){toast(x.message,"err");}return;}
+  if(e.target.closest("[data-close]")){await closePane(id);return;}
   openDock(id);
 });
 $("dock-close").onclick=closeDock;
 $("dock-ansi").onchange=()=>{$("mobile-color").checked=$("dock-ansi").checked;pollDock();};
 $("dock-focus").onclick=async()=>{const p=getPane(S.pane);if(!p)return;try{await act("focus",{pane:p.pane_id,tab:p.tab_id,agent:!!p.agent});toast("focused in Herdr TUI");refreshTree();}catch(x){toast(x.message,"err");}};
 const KEYS=[["Enter","enter"],["Esc","esc"],["Ctrl-C","ctrl+c"],["Tab","tab"],["↑","up"],["↓","down"],["←","left"],["→","right"],["y","y"],["n","n"],["1","1"],["2","2"],["3","3"],["Ctrl-D","ctrl+d"],["Ctrl-L","ctrl+l"]];
-$("dock-keys").innerHTML='<span class="hint" style="align-self:center;margin-right:4px">keys:</span>'+KEYS.map(([l,k])=>`<button class="btn" data-key="${esc(k)}">${esc(l)}</button>`).join("");
-$("dock-keys").addEventListener("click",async e=>{const b=e.target.closest("[data-key]");if(!b||!S.pane)return;try{await act("keys",{pane:S.pane,keys:[b.dataset.key]});S.dockStick=true;setTimeout(pollDock,250);}catch(x){toast(x.message,"err");}});
+$("dock-keys").innerHTML='<span class="hint" style="align-self:center;margin-right:4px">keys:</span>'+KEYS.map(([l,k])=>`<button class="btn" data-key="${esc(k)}">${esc(l)}</button>${k==="ctrl+c"?'<button class="btn mobile-key" data-interrupt-twice title="Send Ctrl-C twice without closing the pane">Ctrl-C ×2</button>':""}`).join("");
+$("dock-keys").addEventListener("click",async e=>{const twice=e.target.closest("[data-interrupt-twice]");if(twice){await interruptTwice();return;}const b=e.target.closest("[data-key]");if(!b||!S.pane)return;try{await act("keys",{pane:S.pane,keys:[b.dataset.key]});S.dockStick=true;setTimeout(pollDock,250);}catch(x){toast(x.message,"err");}});
 $("dock-input").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();$("dock-form").requestSubmit();}});
 $("dock-input").addEventListener("input",e=>{e.target.style.height="auto";e.target.style.height=Math.min(e.target.scrollHeight,140)+"px";});
 $("dock-form").addEventListener("submit",async e=>{

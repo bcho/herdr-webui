@@ -46,6 +46,9 @@ https://<machine>.<tailnet>.ts.net/
 
 Expect one focused terminal, **☰** for the space/tab/pane tree, and **Agents** for
 all agent statuses. Selecting a pane returns to its output without sending input.
+Use **··· → Close pane** for confirmed removal, or **Ctrl-C ×2** to send two
+interrupts without removing the terminal. These controls affect the selected pane;
+only test them on a session you intend to interrupt or close.
 Check that tapping the composer opens the keyboard while keeping input visible.
 Safari's Share > Add to Home Screen makes a convenient shortcut.
 

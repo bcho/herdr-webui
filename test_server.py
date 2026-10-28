@@ -110,6 +110,11 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["--json"]})[0], 400)
         self.assertEqual(self.req("/api/action/keys", {"pane": "w1:p1", "keys": "enter"})[0], 400)
 
+    def test_double_interrupt_keeps_both_keys_and_never_closes(self):
+        status, _ = self.req("/api/action/keys", {"pane": "w1:p1", "keys": ["ctrl+c", "ctrl+c"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls(), [["pane", "send-keys", "w1:p1", "ctrl+c", "ctrl+c"]])
+
     def test_prompt_and_focus(self):
         self.req("/api/action/prompt", {"pane": "w1:p1", "text": "hi"})
         self.req("/api/action/focus", {"pane": "w1:p1", "tab": "w1:t1", "agent": True})

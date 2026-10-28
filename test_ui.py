@@ -81,6 +81,8 @@ class FixtureHandler(BaseHTTPRequestHandler):
         self.server.actions.append((self.path, body, self.headers.get("X-CSRF-Token")))
         if self.server.fail_action:
             return self.reply({"error": "Fixture action failed"}, 502)
+        if self.path == "/api/action/close":
+            self.server.tree["panes"] = [p for p in self.server.tree["panes"] if p["pane_id"] != body["pane"]]
         self.reply({"result": {"ok": True}})
 
 
@@ -197,6 +199,113 @@ class PhoneUITest(unittest.TestCase):
         with self.page.expect_response("**/api/action/keys"):
             self.page.locator('[data-key="ctrl+c"]').click()
         self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "keys": ["ctrl+c"]})
+
+    def test_phone_close_requires_confirmation_and_targets_focused_pane(self):
+        self.open()
+        self.page.locator("#mobile-more").click()
+        messages = []
+        def cancel(dialog):
+            messages.append(dialog.message)
+            dialog.dismiss()
+        self.page.once("dialog", cancel)
+        self.page.get_by_role("button", name="Close pane", exact=True).click()
+        self.assertIn('api-agent', messages[0])
+        self.assertIn('Ctrl-C ×2', messages[0])
+        self.assertEqual(self.httpd.actions, [])
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        with self.page.expect_response("**/api/action/close"):
+            self.page.get_by_role("button", name="Close pane", exact=True).click()
+        self.page.wait_for_function("document.querySelector('#mobile-title').textContent === 'ui-agent'")
+        self.assertEqual(self.httpd.actions[0], ("/api/action/close", {"pane": "p2"}, "fictional-test-token"))
+        self.assertFalse(any(action[0] == "/api/action/keys" for action in self.httpd.actions))
+
+    def test_close_failure_preserves_focused_pane_and_draft(self):
+        self.open()
+        self.httpd.fail_action = True
+        self.page.locator("#dock-input").fill("keep this draft")
+        self.page.locator("#mobile-more").click()
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        with self.page.expect_response("**/api/action/close"):
+            self.page.locator("#mobile-close").click()
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "keep this draft")
+        self.assertIn("Fixture action failed", self.page.locator("#toasts").inner_text())
+        self.assertTrue(self.page.locator("#mobile-close").is_enabled())
+
+    def test_closing_last_pane_leaves_empty_state(self):
+        self.httpd.tree["panes"] = [p for p in self.httpd.tree["panes"] if p["pane_id"] == "p2"]
+        self.open()
+        self.page.locator("#mobile-more").click()
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        with self.page.expect_response("**/api/action/close"):
+            self.page.locator("#mobile-close").click()
+        self.page.locator("#mobile-empty").wait_for()
+        self.assertFalse(self.page.locator("#dock").is_visible())
+
+    def test_delayed_close_does_not_close_new_selection(self):
+        self.open()
+        self.httpd.delay_action = True
+        self.page.locator("#mobile-more").click()
+        self.page.once("dialog", lambda dialog: dialog.accept())
+        self.page.locator("#mobile-close").click()
+        self.assertTrue(self.httpd.action_started.wait(2))
+        self.page.evaluate("refreshTree()")
+        self.assertFalse(self.page.locator("#mobile-close").is_enabled())
+        self.choose("p1")
+        with self.page.expect_response("**/api/action/close"):
+            self.httpd.action_release.set()
+        self.page.wait_for_function("!S.tree.panes.some(p => p.pane_id === 'p2')")
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "ui-agent")
+        self.assertTrue(self.page.locator("#dock").is_visible())
+        self.assertEqual(len(self.httpd.actions), 1)
+
+    def test_double_interrupt_sends_two_keys_without_closing_pane(self):
+        self.open()
+        self.page.locator("#dock-input").fill("unsent draft")
+        with self.page.expect_response("**/api/action/keys"):
+            self.page.locator("[data-interrupt-twice]").click()
+        self.assertEqual(self.httpd.actions[-1], ("/api/action/keys", {"pane": "p2", "keys": ["ctrl+c", "ctrl+c"]}, "fictional-test-token"))
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "unsent draft")
+        self.assertTrue(self.page.locator("#dock").is_visible())
+        self.assertFalse(any(action[0] == "/api/action/close" for action in self.httpd.actions))
+
+    def test_landscape_pane_actions_are_reachable(self):
+        self.page.set_viewport_size({"width": 844, "height": 390})
+        self.open()
+        self.page.locator("#mobile-header-more").click()
+        self.assertTrue(self.page.locator("#mobile-close").is_visible())
+        with self.page.expect_response("**/api/action/keys"):
+            self.page.locator("#mobile-interrupt").click()
+        self.assertEqual(self.httpd.actions[-1][1], {"pane": "p2", "keys": ["ctrl+c", "ctrl+c"]})
+        self.assertTrue(self.page.locator("#dock").is_visible())
+
+    def test_double_interrupt_guard_survives_refresh_and_selection_changes(self):
+        self.open()
+        self.httpd.delay_action = True
+        self.page.locator("[data-interrupt-twice]").click()
+        self.assertTrue(self.httpd.action_started.wait(2))
+        self.page.evaluate("refreshTree()")
+        self.page.locator("#mobile-more").click()
+        self.assertFalse(self.page.locator("#mobile-interrupt").is_enabled())
+        self.choose("p1")
+        self.assertFalse(self.page.locator("[data-interrupt-twice]").is_enabled())
+        with self.page.expect_response("**/api/action/keys"):
+            self.httpd.action_release.set()
+        self.assertEqual(self.httpd.actions[0][1]["pane"], "p2")
+        self.assertEqual(len(self.httpd.actions), 1)
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "ui-agent")
+        self.assertTrue(self.page.locator("[data-interrupt-twice]").is_enabled())
+
+    def test_double_interrupt_error_is_reported_and_control_reenabled(self):
+        self.open()
+        self.httpd.fail_action = True
+        with self.page.expect_response("**/api/action/keys"):
+            self.page.locator("[data-interrupt-twice]").click()
+        self.assertIn("Fixture action failed", self.page.locator("#toasts").inner_text())
+        self.assertTrue(self.page.locator("[data-interrupt-twice]").is_enabled())
+        self.assertTrue(self.page.locator("#dock").is_visible())
 
     def test_inflight_send_does_not_clear_new_pane_draft(self):
         self.open()
