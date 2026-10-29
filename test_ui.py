@@ -309,6 +309,22 @@ class PhoneUITest(unittest.TestCase):
         self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
         self.assertEqual(self.httpd.actions, [])
 
+    def test_header_toggles_remain_onscreen_with_long_labels_and_many_agents(self):
+        self.httpd.tree["panes"][1]["label"] = "long-agent-title-" * 12
+        self.httpd.tree["workspaces"][0]["label"] = "long-workspace-" * 12
+        for i in range(32):
+            self.httpd.tree["panes"].append({"pane_id": f"extra-{i}", "tab_id": "t1", "workspace_id": "w1", "label": f"extra-agent-{i}", "agent": "pi", "agent_status": "idle"})
+        self.open()
+        for width, height in ((390, 844), (360, 240)):
+            self.page.set_viewport_size({"width": width, "height": height})
+            for trigger in ("#mobile-menu", "#mobile-agents"):
+                self.page.locator(trigger).tap()
+                self.page.locator(trigger).tap()
+                box = self.page.locator(trigger).bounding_box()
+                self.assertLessEqual(box["x"] + box["width"], width)
+                self.assertGreaterEqual(box["x"], 0)
+        self.assertEqual(self.httpd.actions, [])
+
     def test_header_switches_between_popups_and_keyboard_can_close(self):
         self.open()
         self.page.locator("#mobile-menu").tap()
