@@ -63,6 +63,14 @@ class FixtureHandler(BaseHTTPRequestHandler):
             if self.server.fail_page:
                 return self.reply({"error": "Fixture page unavailable"}, 503)
             return self.reply((HERE / "index.html").read_text().replace("__CSRF_TOKEN__", self.server.csrf_token), html=True)
+        if url.path == "/errors.js":
+            body = (HERE / "errors.js").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path == "/api/tree":
             if self.server.fail_tree:
                 return self.reply({"error": "Fixture offline"}, 502)
@@ -78,6 +86,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        if self.path == "/api/client-error":
+            self.server.reports.append(body)
+            return self.reply({"ok": True})
         self.server.post_attempts += 1
         if self.headers.get("X-CSRF-Token") != self.server.csrf_token:
             return self.reply({"error": "missing or bad CSRF token", "code": "csrf_invalid"}, 403)
@@ -113,7 +124,7 @@ class PhoneUITest(unittest.TestCase):
         self.httpd.csrf_token = "fictional-test-token"
         self.httpd.page_reads = self.httpd.post_attempts = 0
         self.httpd.action_started, self.httpd.action_release = threading.Event(), threading.Event()
-        self.httpd.actions, self.httpd.reads = [], []
+        self.httpd.actions, self.httpd.reads, self.httpd.reports = [], [], []
         self.httpd.delay_pane = None
         self.httpd.read_started, self.httpd.read_release = threading.Event(), threading.Event()
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -849,6 +860,45 @@ class PhoneUITest(unittest.TestCase):
             self.page.get_by_role("button", name="Show all agents").click()
             self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
             self.page.get_by_role("button", name="Return to focused pane").click()
+
+
+class BrowserDiagnosticsTest(unittest.TestCase):
+    setUpClass = classmethod(PhoneUITest.setUpClass.__func__)
+    tearDownClass = classmethod(PhoneUITest.tearDownClass.__func__)
+    setUp = PhoneUITest.setUp
+    tearDown = PhoneUITest.tearDown
+    open = PhoneUITest.open
+
+    def test_browser_reports_invalid_json_without_sensitive_content(self):
+        self.open()
+        self.page.route(self.base + "/api/read*", lambda route: route.fulfill(status=200, content_type="application/json", body="SECRET-RESPONSE"))
+        with self.page.expect_response(lambda response: response.url.endswith("/api/client-error")):
+            self.page.evaluate("getJSON('/api/read?pane=SECRET-PANE').catch(() => {})")
+        self.assertTrue(any(report["kind"] == "invalid_json" for report in self.httpd.reports))
+        self.assertNotIn("SECRET", json.dumps(self.httpd.reports))
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_uncaught_errors_and_rejections_are_reported_without_message(self):
+        self.open()
+        for script, kind in (("dispatchEvent(new ErrorEvent('error', {message:'SECRET-MESSAGE'}))", "javascript_error"),
+                             ("dispatchEvent(new PromiseRejectionEvent('unhandledrejection', {promise:Promise.resolve(),reason:'SECRET-REJECTION'}))", "unhandled_rejection")):
+            with self.page.expect_response(lambda response: response.url.endswith("/api/client-error")):
+                self.page.evaluate(script)
+            self.assertTrue(any(report["kind"] == kind for report in self.httpd.reports))
+        self.assertNotIn("SECRET", json.dumps(self.httpd.reports))
+
+    def test_report_failure_does_not_recurse_or_replay_action(self):
+        self.open()
+        attempts = []
+        def fail_report(route):
+            attempts.append(route.request.url)
+            route.abort()
+        self.page.route(self.base + "/api/client-error", fail_report)
+        self.page.route(self.base + "/api/action/followup", lambda route: route.abort())
+        with self.page.expect_console_message(predicate=lambda message: "diagnostic could not reach" in message.text):
+            self.page.evaluate("act('followup',{pane:'p2',text:'SECRET-DRAFT'}).catch(() => {})")
+        self.assertEqual(self.httpd.actions, [])
+        self.assertEqual(len(attempts), 1)
 
 
 class RealBridgeUITest(unittest.TestCase):

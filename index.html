@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="__CSRF_TOKEN__">
 <title>Herdr · Live Agent Sessions</title>
+<script src="/errors.js"></script>
 <style>
 :root{
   --bg0:#0b0e14;--bg1:#11151d;--bg2:#161b25;--bg3:#1d2330;--line:#262d3b;--line2:#323b4d;
@@ -345,6 +346,7 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
 <script>
 "use strict";
 let CSRF = document.querySelector('meta[name="csrf-token"]').content;
+window.webuiCSRF = () => CSRF;
 let csrfRefresh = null;
 const $ = id => document.getElementById(id);
 const STATUSES = ["working","blocked","done","idle","unknown"];
@@ -365,8 +367,21 @@ let interruptBusy = false, submitBusy = false;
 
 /* ---------------- utils ---------------- */
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function toast(msg, kind="ok"){const t=document.createElement("div");t.className="toast "+kind;t.textContent=msg;$("toasts").append(t);setTimeout(()=>t.remove(),kind==="err"?6000:2600);}
-async function getJSON(url){const r=await fetch(url,{cache:"no-store"});const d=await r.json().catch(()=>({error:r.statusText}));if(!r.ok)throw new Error(d.error||r.statusText);return d;}
+function toast(msg, kind="ok"){if(kind==="err")reportWebUIError("ui_error");const t=document.createElement("div");t.className="toast "+kind;t.textContent=msg;$("toasts").append(t);setTimeout(()=>t.remove(),kind==="err"?6000:2600);}
+async function fetchJSON(url, options){
+  let r;
+  try{r=await fetch(url,options);}catch(e){reportWebUIError("network_error",url);throw e;}
+  let d;
+  try{d=await r.json();}catch(e){reportWebUIError("invalid_json",url,r);throw new Error(r.ok?"Could not confirm delivery: the server response was incomplete.":r.statusText);}
+  if(!r.ok)reportWebUIError("http_error",url,r);
+  return {r,d};
+}
+async function getJSON(url){
+  const {r,d}=await fetchJSON(url,{cache:"no-store"});
+  if(!r.ok)throw new Error(d?.error||r.statusText);
+  if(!d||typeof d!=="object"||Array.isArray(d)){reportWebUIError("invalid_response",url,r);throw new Error("The server response was invalid.");}
+  return d;
+}
 async function refreshCSRF(){
   if(!csrfRefresh)csrfRefresh=(async()=>{
     const r=await fetch("/",{cache:"no-store",redirect:"error"});
@@ -374,23 +389,21 @@ async function refreshCSRF(){
     const page=new DOMParser().parseFromString(await r.text(),"text/html"),token=page.querySelector('meta[name="csrf-token"]')?.content;
     if(!token||token==="__"+"CSRF_TOKEN__")throw new Error("Could not refresh the session. Your text is preserved; reload the page.");
     CSRF=token;
-  })().finally(()=>{csrfRefresh=null;});
+  })().catch(e=>{reportWebUIError("csrf_refresh_failed");throw e;}).finally(()=>{csrfRefresh=null;});
   return csrfRefresh;
 }
 async function act(name, body){
   const payload=JSON.stringify(body);
   for(let attempt=0;attempt<2;attempt++){
     const token=CSRF;
-    const r=await fetch("/api/action/"+name,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":token},body:payload});
-    let d;
-    try{d=await r.json();}catch(e){if(r.ok)throw new Error("Could not confirm delivery: the server response was incomplete.");d={error:r.statusText};}
+    const {r,d}=await fetchJSON("/api/action/"+name,{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":token},body:payload});
     // Only this pre-action rejection guarantees that retrying cannot duplicate a command.
-    if(attempt===0&&r.status===403&&d.code==="csrf_invalid"){
+    if(attempt===0&&r.status===403&&d?.code==="csrf_invalid"){
       if(CSRF===token)await refreshCSRF();
       continue;
     }
-    if(!r.ok)throw new Error(d.error||r.statusText);
-    if(d?.ok!==true||!("result" in d))throw new Error("Could not confirm delivery: the server response was invalid.");
+    if(!r.ok)throw new Error(d?.error||r.statusText);
+    if(d?.ok!==true||!("result" in d)){reportWebUIError("invalid_response","/api/action/"+name,r);throw new Error("Could not confirm delivery: the server response was invalid.");}
     return d.result;
   }
 }
@@ -437,7 +450,7 @@ async function refreshTree(manual=false){
     if(!getTab(S.tab)||getTab(S.tab).workspace_id!==S.ws){const w=getWs(S.ws);S.tab=(w&&getTab(w.active_tab_id))?w.active_tab_id:(S.ws?tabsOf(S.ws)[0]?.tab_id:null);}
     if(S.pane&&!getPane(S.pane)){toast(`pane ${S.pane} is gone`,"err");closeDock();}
     if(phone.matches)ensureMobilePane();
-  }catch(e){S.err=e.message;}
+  }catch(e){reportWebUIError("ui_error","/api/tree");S.err=e.message;}
   finally{S.busy=false;$("refresh-ico").classList.remove("spin");render();}
 }
 
@@ -445,7 +458,7 @@ const reading=new Set();
 async function readPane(id,{lines=60,ansi=false}={}){
   if(reading.has(id+ansi))return;reading.add(id+ansi);
   try{const d=await getJSON(`/api/read?pane=${encodeURIComponent(id)}&lines=${lines}&ansi=${ansi?1:0}`);return d.text;}
-  catch(e){return `⚠ ${e.message}`;}
+  catch(e){reportWebUIError("ui_error","/api/read");return `⚠ ${e.message}`;}
   finally{reading.delete(id+ansi);}
 }
 async function pollPanes(){

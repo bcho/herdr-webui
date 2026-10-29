@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>MOCKUP – Herdr Pi SRE landing</title>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#0d1117;--card:#161b22;--line:#30363d;--fg:#e6edf3;--mute:#8b949e;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--acc:#58a6ff}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif;overflow-x:hidden}
+.banner{background:var(--warn);color:#000;text-align:center;font-weight:700;padding:.4rem;font-size:.85rem}
+header,main{max-width:1100px;margin:0 auto;padding:1rem}
+header{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:1.5rem}h2{font-size:1.1rem;margin:.2rem 0 .6rem}
+select,button,textarea{font:inherit;color:var(--fg);background:#0b0f14;border:1px solid var(--line);border-radius:8px;padding:.45rem .7rem}
+button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem;margin-bottom:1rem;min-width:0}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.7rem;list-style:none;padding:0;margin:0}
+.svc{border:1px solid var(--line);border-radius:10px;padding:.7rem}
+.svc b{display:block}.dot{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.35rem}
+.up .dot{background:var(--ok)}.down .dot{background:var(--bad)}.down{border-color:var(--bad)}
+.cols{display:grid;grid-template-columns:3fr 2fr;gap:1rem}
+.open{display:block;width:100%;font-size:1.3rem;padding:1rem;background:#1f6feb;border:0;margin-bottom:.6rem}
+pre{background:#010409;border-radius:8px;padding:.7rem;overflow-x:auto;font-size:.8rem;margin:0;white-space:pre-wrap;word-break:break-word}
+#log{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:.5rem;margin-bottom:.6rem}
+.msg{padding:.5rem .7rem;border-radius:10px;max-width:90%;white-space:pre-wrap;word-break:break-word}
+.user{align-self:flex-end;background:#1f3a5f}.bot{background:#21262d}
+.msg time{display:block;font-size:.72rem;color:var(--mute)}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}.chips button{font-size:.8rem;border-radius:999px}
+textarea{width:100%;min-height:3.2rem;resize:vertical}
+.note{color:var(--mute);font-size:.82rem}
+table{width:100%;border-collapse:collapse;font-size:.82rem}td,th{border-bottom:1px solid var(--line);padding:.35rem;text-align:left;word-break:break-word}
+.approve{border:1px dashed var(--warn);border-radius:10px;padding:.7rem}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="banner" role="note">MOCKUP · fictional data · no live Pi, Herdr or LLM is contacted · repairs are never executed</div>
+<header>
+  <h1>Herdr Control <span class="note">(mockup)</span></h1>
+  <label>Scenario
+    <select id="scenario" aria-label="Simulated scenario">
+      <option value="healthy">Healthy</option><option value="herdr">Herdr down</option>
+      <option value="webui">Web UI down</option><option value="llm">LLM unavailable</option>
+    </select>
+  </label>
+</header>
+<main>
+<section aria-labelledby="h-health"><h2 id="h-health">Service health (simulated)</h2>
+  <ul class="grid" id="health"></ul>
+</section>
+<div class="cols">
+<section aria-labelledby="h-open"><h2 id="h-open">Terminal</h2>
+  <button class="open" id="open" type="button">Open Herdr</button>
+  <p class="note" id="open-note" aria-live="polite"></p>
+  <pre id="preview" aria-label="Fictional local terminal preview"></pre>
+</section>
+<section aria-labelledby="h-chat"><h2 id="h-chat">Pi SRE chat <span class="note">(simulated responses)</span></h2>
+  <div id="log" role="log" aria-live="polite" aria-label="Chat messages"></div>
+  <div class="chips" aria-label="Example prompts">
+    <button type="button">Why is Herdr down?</button><button type="button">Show recent errors</button><button type="button">Restart Web UI</button>
+  </div>
+  <form id="chat"><label for="input" class="note">Message (Enter to send, Shift+Enter for newline)</label>
+    <textarea id="input" placeholder="Ask the SRE assistant…"></textarea>
+    <button type="submit">Send</button></form>
+</section>
+</div>
+<div class="cols">
+<section aria-labelledby="h-inc"><h2 id="h-inc">Incident log (safe metadata only)</h2>
+  <table><thead><tr><th scope="col">Time</th><th scope="col">Request ID</th><th scope="col">Route</th><th scope="col">Result</th></tr></thead>
+  <tbody>
+    <tr><td>10:02:11</td><td>req-demo-0001</td><td>POST /api/action/send</td><td>400 invalid JSON (body redacted)</td></tr>
+    <tr><td>10:02:40</td><td>req-demo-0002</td><td>POST /api/action/send</td><td>403 CSRF token mismatch</td></tr>
+    <tr><td>10:03:05</td><td>req-demo-0003</td><td>GET /api/tree</td><td>200 · 4 ms</td></tr>
+  </tbody></table>
+  <p class="note">Bodies, tokens, cookies and client addresses are never shown.</p>
+</section>
+<section aria-labelledby="h-rep"><h2 id="h-rep">Repair approval (illustration)</h2>
+  <div class="approve"><p>Proposed: <code>restart web-ui service</code></p>
+  <button type="button" id="approve">Approve repair</button> <button type="button" id="deny">Deny</button>
+  <p class="note" id="repair-status" aria-live="polite">Awaiting human approval. Nothing runs in this mockup.</p></div>
+</section>
+</div>
+</main>
+<script>
+const S={healthy:{},herdr:{Herdr:'down'},webui:{'Web UI':'down'},llm:{LLM:'down'}};
+const SVC=['Herdr','Web UI','Pi SRE','LLM'];
+const $=id=>document.getElementById(id);
+function render(){
+  const sc=S[$('scenario').value],h=$('health');h.replaceChildren();
+  for(const n of SVC){const d=sc[n]==='down',li=document.createElement('li');li.className='svc '+(d?'down':'up');
+    const b=document.createElement('b');const dot=document.createElement('span');dot.className='dot';dot.setAttribute('aria-hidden','true');
+    b.append(dot,n);const s=document.createElement('span');s.textContent=d?'Down':'Healthy';li.append(b,s);
+    li.setAttribute('aria-label',n+': '+s.textContent);h.append(li);}
+  const off=!!(sc.Herdr||sc['Web UI']);$('open').disabled=off;
+  $('open-note').textContent=off?'Open Herdr disabled: a required service is down (simulated).':'Opens nothing in this mockup.';
+  $('preview').textContent=off?'$ herdr status\nerror: connection refused (fictional)':'$ herdr status\nworkspaces: 2  panes: 4  (fictional)';
+}
+function add(cls,text){const m=document.createElement('div');m.className='msg '+cls;const t=document.createElement('time');
+  const now=new Date();t.dateTime=now.toISOString();t.textContent=(cls==='user'?'You':'Pi SRE (simulated)')+' · '+now.toLocaleTimeString();
+  const p=document.createElement('div');p.textContent=text;m.append(t,p);$('log').append(m);$('log').scrollTop=1e9;}
+function reply(q){const sc=$('scenario').value;
+  if(sc==='llm')return 'LLM unavailable (simulated). Cached status: Herdr and Web UI healthy; Pi SRE process running. No AI diagnosis or repair is available until model access recovers.';
+  if(/restart|repair|fix/i.test(q))return 'Simulated: I can propose a repair, but it needs approval and will not execute in this mockup.';
+  return {healthy:'All services healthy (simulated). Last error: req-demo-0002 CSRF mismatch.',herdr:'Diagnosis (simulated): Herdr socket refused connections. Suggest restart after approval.',webui:'Diagnosis (simulated): Web UI process exited. Suggest restart after approval.'}[sc];}
+function send(){const v=$('input').value.trim();if(!v)return;add('user',v);$('input').value='';add('bot',reply(v));}
+$('chat').addEventListener('submit',e=>{e.preventDefault();send();});
+$('input').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();send();}});
+document.querySelectorAll('.chips button').forEach(b=>b.addEventListener('click',()=>{$('input').value=b.textContent;$('input').focus();}));
+$('approve').addEventListener('click',()=>{$('repair-status').textContent='Approved (illustration only) — no command was executed.';});
+$('deny').addEventListener('click',()=>{$('repair-status').textContent='Denied. Nothing was executed.';});
+$('open').addEventListener('click',()=>{$('open-note').textContent='Mockup: no terminal is opened.';});
+$('scenario').addEventListener('change',render);
+render();add('bot','Sample diagnosis (simulated): all checks passed at last probe; 1 CSRF rejection in the incident log.');
+</script>
+</body>
+</html>

@@ -1,4 +1,30 @@
-# Phone UI proposal
+# UI mockups
+
+## Landing page and Pi SRE chat
+
+![Desktop landing page](sre-landing-desktop.png)
+
+[Phone preview](sre-landing-phone.png)
+
+Open [sre-landing.html](sre-landing.html), or `/mockups/sre-landing` on the running
+bridge. This is a clickable **design mockup**, not an operational watchdog.
+All hosts, incidents, health states, chat responses and repair proposals are
+fictional. Nothing executes terminal commands, calls a model or repairs services.
+
+Try the healthy, Herdr-down, Web-UI-down and LLM-unavailable scenarios. The
+landing/status/chat layout illustrates a future independently supervised Pi
+companion: losing Herdr must not remove access to its repair agent. Serving this
+preview from the current bridge does **not** implement that independent runtime.
+The existing terminal UI at `/` is unchanged.
+
+The chat accepts local demonstration input only; a repair approval, if shown,
+is illustrative and never performs a repair. No conversation is sent anywhere.
+Do not enter secrets into mockups or commit screenshots containing real data.
+
+Verify with `python3 -m unittest test_mockup -v` using the already installed
+Playwright Python package and Chrome. No packages are installed by the tests.
+
+## Phone UI proposal
 
 **Design review only. The application and desktop UI are unchanged.**
 All session names, code, output, and counts in these mockups are fictional.
