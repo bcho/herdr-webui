@@ -869,6 +869,17 @@ class BrowserDiagnosticsTest(unittest.TestCase):
     tearDown = PhoneUITest.tearDown
     open = PhoneUITest.open
 
+    def test_missing_diagnostic_script_does_not_break_offline_recovery_or_toasts(self):
+        self.page.route(self.base + "/errors.js", lambda route: route.abort())
+        self.httpd.fail_tree = True
+        self.page.goto(self.base + "/")
+        self.page.wait_for_function("S.err !== null")
+        self.page.evaluate("toast('Fixture visible error', 'err')")
+        self.page.get_by_text("Fixture visible error", exact=True).wait_for()
+        self.httpd.fail_tree = False
+        self.page.wait_for_function("S.tree !== null && S.err === null")
+        self.assertEqual(self.httpd.actions, [])
+
     def test_browser_reports_invalid_json_without_sensitive_content(self):
         self.open()
         self.page.route(self.base + "/api/read*", lambda route: route.fulfill(status=200, content_type="application/json", body="SECRET-RESPONSE"))
