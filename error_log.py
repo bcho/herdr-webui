@@ -28,7 +28,7 @@ ERROR_MESSAGES.update({"herdr_not_found": "herdr executable not found", "herdr_t
                        "invalid_json": "invalid JSON request body", "internal_error": "internal server error"})
 BROWSER_KINDS = frozenset({"network_error", "invalid_json", "invalid_response", "csrf_refresh_failed",
                            "javascript_error", "unhandled_rejection", "resource_error", "http_error", "ui_error"})
-ROUTES = frozenset({"/", "/api/tree", "/api/read", "/api/client-error", "/errors.js", "/mockups/sre-landing",
+ROUTES = frozenset({"/", "/api/tree", "/api/read", "/api/client-error", "/errors.js", "/mockups/sre-landing", "/mockups/model-switch",
                     *(f"/api/action/{action}" for action in ("send", "keys", "followup", "prompt", "focus", "split", "close", "spawn"))})
 
 

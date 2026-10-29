@@ -126,9 +126,10 @@ class ErrorLoggingTest(unittest.TestCase):
         self.assertEqual(self.request("GET", "/")[0], 200)
         self.assertEqual(self.request("GET", "/errors.js")[0], 200)
         with patch.object(server, "herdr", side_effect=AssertionError("must not call Herdr")):
-            status, body, _ = self.request("GET", "/mockups/sre-landing")
-            self.assertEqual(status, 200)
-            self.assertIn(b"mockup", body.lower())
+            for route in ("/mockups/sre-landing", "/mockups/model-switch"):
+                status, body, _ = self.request("GET", route)
+                self.assertEqual(status, 200)
+                self.assertIn(b"mockup", body.lower())
         self.assertEqual(self.events(), [])
 
     def test_file_is_private_append_only_and_rotates(self):

@@ -45,7 +45,8 @@ https://<machine>.<tailnet>.ts.net/
 ```
 
 Expect one focused terminal, **☰** for the space/tab/pane tree, and **Agents** for
-agents sorted Working → Blocked → Done → Idle. Tap a state count to filter;
+agents sorted Working → Blocked → Done → Idle. Tap either header button again
+or its popup's × to dismiss; selection and drafts remain unchanged. Tap a state count to filter;
 tap that same count again to show all. Selecting a pane returns to its output
 without sending input.
 Use **··· → Close pane** for confirmed removal, or **Ctrl-C ×2** to send two
@@ -68,17 +69,24 @@ python3 -m unittest test_ui test_mockup -v
 
 ```text
 http://127.0.0.1:8780/mockups/sre-landing
-# Expect: a labelled mockup with selectable outage scenarios; no real chat or repairs.
+# Expect: scenario-specific diagnosis/incidents/approvals; healthy upgrade prompts; LLM reset or recent models. No live changes.
 ```
 
-9. Inspect recent safe error classifications (honors a custom log location).
+9. Preview model selection inside a fictional Herdr pane view.
+
+```text
+http://127.0.0.1:8780/mockups/model-switch
+# Expect: current-pane/all-compatible scopes, skipped/deferred agents, confirmation and simulation only.
+```
+
+10. Inspect recent safe error classifications (honors a custom log location).
 
 ```bash
 python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ.get("HERDR_WEBUI_LOG_FILE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home()/".local/state")))/"herdr-webui/errors.jsonl"))); rows=p.read_text().splitlines(); print("\n".join(json.dumps({k:e.get(k) for k in ("time","event","code","status","request_id")}) for e in map(json.loads,rows[-20:])))'
 # Expect: safe JSON events with error codes and request IDs; an empty file is normal before an error.
 ```
 
-10. Run on a separate port with an explicit error file (stop with Ctrl-C).
+11. Run on a separate port with an explicit error file (stop with Ctrl-C).
 
 ```bash
 python3 server.py --port 9000 --log-file "$HOME/.local/state/herdr-webui/preview-errors.jsonl"

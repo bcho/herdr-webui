@@ -290,6 +290,43 @@ class PhoneUITest(unittest.TestCase):
         self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
         self.assertTrue(self.page.locator("#dock").is_visible())
 
+    def test_header_buttons_toggle_popups_and_keep_x_close(self):
+        self.open()
+        self.page.locator("#dock-input").fill("preserve popup draft")
+        for trigger, popup, close in (("#mobile-menu", "#session-sidebar", "#mobile-nav-close"),
+                                      ("#mobile-agents", "#agents-view", "#agents-close")):
+            self.page.locator(trigger).tap()
+            self.assertTrue(self.page.locator(popup).is_visible())
+            self.assertEqual(self.page.locator(trigger).get_attribute("aria-expanded"), "true")
+            self.page.locator(trigger).tap()
+            self.assertFalse(self.page.locator(popup).is_visible())
+            self.assertEqual(self.page.locator(trigger).get_attribute("aria-expanded"), "false")
+            self.assertTrue(self.page.locator(trigger).evaluate("el => el === document.activeElement"))
+            self.page.locator(trigger).tap()
+            self.page.locator(close).tap()
+            self.assertFalse(self.page.locator(popup).is_visible())
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "preserve popup draft")
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_header_switches_between_popups_and_keyboard_can_close(self):
+        self.open()
+        self.page.locator("#mobile-menu").tap()
+        self.page.locator("#mobile-agents").tap()
+        self.assertFalse(self.page.locator("#session-sidebar").is_visible())
+        self.assertTrue(self.page.locator("#agents-view").is_visible())
+        self.page.locator("#mobile-agents").focus()
+        self.page.keyboard.press("Enter")
+        self.assertFalse(self.page.locator("#agents-view").is_visible())
+        self.page.locator("#mobile-agents").tap()
+        self.page.locator("#mobile-menu").tap()
+        self.assertTrue(self.page.locator("#session-sidebar").is_visible())
+        self.assertFalse(self.page.locator("#agents-view").is_visible())
+        self.page.locator("#mobile-menu").focus()
+        self.page.keyboard.press("Space")
+        self.assertFalse(self.page.locator("#session-sidebar").is_visible())
+        self.assertEqual(self.httpd.actions, [])
+
     def test_drafts_do_not_cross_panes_and_survive_return(self):
         self.open()
         self.page.locator("#dock-input").fill("draft for api")
@@ -682,8 +719,16 @@ class PhoneUITest(unittest.TestCase):
         self.page.get_by_role("button", name="Show all agents").click()
         self.page.locator(".agent-card").last.focus()
         self.page.keyboard.press("Tab")
+        self.assertTrue(self.page.locator("#mobile-menu").evaluate("el => el === document.activeElement"))
+        self.page.keyboard.press("Tab")
+        self.assertTrue(self.page.locator("#mobile-agents").evaluate("el => el === document.activeElement"))
+        self.page.keyboard.press("Tab")
         self.assertTrue(self.page.locator("#agents-close").evaluate("el => el === document.activeElement"))
         self.assertTrue(self.page.locator("#main-content").evaluate("el => el.inert"))
+        self.page.locator("#mobile-menu").focus()
+        self.page.keyboard.press("Shift+Tab")
+        self.assertTrue(self.page.locator(".agent-card").last.evaluate("el => el === document.activeElement"))
+        self.assertFalse(self.page.locator("#mobile-header").evaluate("el => el.inert"))
 
     def test_resizing_preserves_desktop_grid_and_mobile_selection(self):
         self.page.set_viewport_size({"width": 1440, "height": 1000})

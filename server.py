@@ -344,8 +344,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, page.encode(), "text/html; charset=utf-8")
             if url.path == "/errors.js":
                 return self._send(200, (HERE / "errors.js").read_bytes(), "text/javascript; charset=utf-8")
-            if url.path == "/mockups/sre-landing":
-                return self._send(200, (HERE / "docs/mockups/sre-landing.html").read_bytes(), "text/html; charset=utf-8")
+            if url.path in {"/mockups/sre-landing", "/mockups/model-switch"}:
+                mockup = "sre-landing.html" if url.path == "/mockups/sre-landing" else "model-switch.html"
+                return self._send(200, (HERE / "docs/mockups" / mockup).read_bytes(), "text/html; charset=utf-8")
             if url.path == "/api/tree":
                 return self._json(200, snapshot())
             if url.path == "/api/read":

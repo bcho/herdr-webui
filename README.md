@@ -54,6 +54,8 @@ output and direct agent interaction from the browser.
   Ctrl-C to exit can return to the shell. Exit behavior depends on the agent.
 - Normal navigation never changes the TUI's focus. Use **New session** in the
   navigation drawer to launch a session.
+- On phones, tap the hamburger or Agents button again to close its popup;
+  the × buttons, Escape, and navigation backdrop still close it too.
 - Terminal output scrolls independently; viewport sizing follows the on-screen
   keyboard. After a service restart, an explicitly rejected stale security token
   is refreshed automatically and the original action is retried once. Other
@@ -209,9 +211,18 @@ reporter loads likewise cannot guarantee an application-log record.
 Preview the [landing page and Pi SRE chat mockup](docs/mockups/sre-landing.html)
 at `/mockups/sre-landing` on the running bridge. It uses fictional health and chat
 responses and makes no service/API requests. It is **not a live watchdog, chat
-integration or independent recovery server**; the current root terminal UI stays
-unchanged. The proposed production companion must run separately so it remains
-reachable when the bridge itself fails. See [mockup notes](docs/mockups/README.md).
+integration or independent recovery server**. Its incidents, root causes and
+approval proposals change with the selected outage. LLM recovery illustrates
+Reset to default or the last five user-used models sorted by recency, not a fixed
+provider priority.
+
+A separate [model-switching mockup](docs/mockups/model-switch.html) is served at
+`/mockups/model-switch`: preview a Change model control in the Herdr pane view,
+scoped to the current agent or all compatible agents. Unsupported runtimes are
+skipped and working agents defer until idle; all actions are simulated. There
+is no live model-switch endpoint in this bridge. The proposed production
+companion must run separately so it remains reachable when the bridge fails.
+See [mockup notes](docs/mockups/README.md).
 
 ## Security model
 

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>Herdr · Model switching preview</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0e14;--card:#151b25;--border:#2b3444;--text:#dce4ef;--muted:#9daabd;--cyan:#3fc1e8;--amber:#f5b041}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}.banner{padding:9px 16px;text-align:center;background:#634809;color:#fff4ce;font-weight:600}main{max-width:1120px;padding:20px;margin:auto}h1{font-size:23px;margin:0}h2{font-size:17px;margin:0 0 12px}.muted{color:var(--muted);font-size:12px}header,.toolbar,.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}header{justify-content:space-between;margin-bottom:20px}button,select{font:inherit;color:inherit;background:#1a2535;border:1px solid var(--border);border-radius:8px;padding:9px 12px;max-width:100%}button{cursor:pointer}button:disabled{opacity:.5;cursor:not-allowed}button.primary{color:#07141b;background:var(--cyan);font-weight:600}button[aria-pressed=true]{border-color:var(--cyan);color:var(--cyan)}:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:16px}.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;min-width:0;margin-bottom:16px}.pane{display:block;width:100%;margin-bottom:8px;text-align:left}.pane small{display:block;color:var(--muted)}.crumb{color:var(--cyan);font:12px ui-monospace,monospace}.terminal{white-space:pre-wrap;overflow-wrap:anywhere;min-height:110px;padding:16px;background:#070a10;border-radius:8px;font:12px/1.8 ui-monospace,monospace}.model-pill{font:12px ui-monospace,monospace;border:1px solid var(--border);border-radius:6px;padding:5px 8px;overflow-wrap:anywhere}.toolbar{justify-content:space-between;margin:10px 0}.controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:12px;margin:14px 0}label{display:block}label select{display:block;width:100%;margin-top:5px}.notice{border-left:3px solid var(--amber);padding:10px 12px;background:#292217;color:#ffe0a6;border-radius:3px}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:10px 7px;border-bottom:1px solid var(--border);overflow-wrap:anywhere;min-width:85px}.actions{margin-top:16px}#result{color:var(--cyan);white-space:pre-wrap}input{accent-color:var(--cyan)}@media(max-width:700px){main{padding:12px}.layout{grid-template-columns:minmax(0,1fr)}.layout>div{min-width:0}.pane-list{display:flex;gap:6px;overflow:auto}.pane{width:auto;flex:0 0 auto}.controls{grid-template-columns:1fr}.toolbar{align-items:flex-start}.terminal{min-height:70px}h1{font-size:20px}}
+</style>
+</head>
+<body>
+<div class="banner">DESIGN MOCKUP · fictional agents and models · no live changes or network calls</div>
+<main>
+<header><div><h1>Herdr agent workspace</h1><span class="muted">A model control inside the terminal view—not the SRE landing page</span></div><button id="back" type="button">← Landing mockup</button></header>
+<div class="layout">
+<aside class="card" aria-label="Fictional panes"><h2>Website / Build</h2><div class="pane-list" id="panes"></div><p class="muted">Selecting a pane only changes this preview.</p></aside>
+<div>
+<section class="card" aria-labelledby="pane-title"><span class="crumb">demo server / Website / Build</span><div class="toolbar"><h2 id="pane-title"></h2><button id="model-toggle" type="button" aria-controls="model-controls" aria-expanded="true">Change model</button></div><div class="toolbar"><span class="model-pill" id="current-model"></span><span class="muted" id="agent-state"></span></div><pre class="terminal" id="terminal"></pre></section>
+<section class="card" id="model-controls" aria-labelledby="model-title"><h2 id="model-title">Change agent model <span class="muted">— preview only</span></h2>
+<p class="muted">Herdr does not expose a universal model-switch API. A real implementation needs a verified adapter for each agent runtime. Listing an agent does not mean its model can be changed.</p>
+<div class="controls"><label>Apply to<select id="scope"><option value="current">Agent in current pane</option><option value="all">All compatible agents on this Herdr server</option></select></label><label>Recently used by you<select id="model"></select></label></div>
+<div class="actions"><button id="default" type="button">Use configured default</button><span class="muted">Last 5 distinct user-used models, newest first. Fictional history; not a provider priority.</span></div>
+<p class="notice">Working agents wait until idle. Unsupported runtimes and plain shells are skipped. No Ctrl-C, typed slash commands, process restarts or interrupted work.</p>
+<div class="table-wrap"><table aria-label="Proposed model changes"><thead><tr><th>Pane</th><th>Current model</th><th>Proposed model</th><th>Handling</th></tr></thead><tbody id="plan"></tbody></table></div>
+<div class="actions"><label><input id="confirm" type="checkbox"> I reviewed the target panes and skipped agents</label><button id="apply" type="button" class="primary" disabled>Simulate model change</button></div>
+<p id="result" role="status" aria-live="polite"></p>
+</section>
+</div>
+</div>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const recent=[
+ {id:'openai-sub/reasoning',label:'OpenAI subscription · reasoning model',lastUsed:'2026-01-15T10:15:00Z'},
+ {id:'azure-foundry-sub/reasoning',label:'Azure Foundry subscription · reasoning model',lastUsed:'2026-01-15T09:00:00Z'},
+ {id:'copilot-proxy/reasoning',label:'GitHub Copilot (proxy) · reasoning model',lastUsed:'2026-01-15T10:05:00Z'},
+ {id:'bedrock/opus-5.5',label:'Bedrock · Opus 5.5',lastUsed:'2026-01-15T09:50:00Z'},
+ {id:'github-copilot/fast',label:'GitHub Copilot · fast model',lastUsed:'2026-01-14T18:00:00Z'}
+].sort((a,b)=>Date.parse(b.lastUsed)-Date.parse(a.lastUsed)).slice(0,5);
+const agents=[
+ {id:'p1',name:'ui-agent',runtime:'pi',model:'copilot-proxy/reasoning',defaultModel:'copilot-proxy/reasoning',state:'idle',supported:true},
+ {id:'p2',name:'api-agent',runtime:'codex',model:'openai-sub/reasoning',state:'working',supported:false},
+ {id:'p3',name:'docs-agent',runtime:'pi',model:'bedrock/opus-5.5',defaultModel:'copilot-proxy/reasoning',state:'working',supported:true},
+ {id:'p4',name:'shell',runtime:'shell',model:'—',state:'idle',supported:false}
+];
+let selected=agents[0],useDefault=false;
+for(const model of recent){const option=document.createElement('option');option.value=model.id;option.textContent=model.label;$('model').append(option);}
+function plan(){return ($('scope').value==='all'?agents:[selected]).map(agent=>({agent,target:agent.supported?(useDefault?agent.defaultModel:$('model').value):'—',handling:!agent.supported?(agent.runtime==='shell'?'Skipped: plain shell':'Skipped: no verified runtime adapter'):agent.state==='working'?'Deferred: wait until idle':'Ready: compatible Pi adapter (simulated)'}));}
+function updatePlan(){
+ $('plan').replaceChildren();$('result').textContent='';$('confirm').checked=false;
+ for(const row of plan()){const tr=document.createElement('tr');for(const text of [row.agent.name,row.agent.model,row.target,row.handling]){const td=document.createElement('td');td.textContent=text;tr.append(td);}$('plan').append(tr);}
+ $('apply').disabled=true;
+}
+function render(){
+ $('panes').replaceChildren();for(const agent of agents){const b=document.createElement('button');b.type='button';b.className='pane';b.dataset.pane=agent.id;b.setAttribute('aria-pressed',String(agent===selected));const name=document.createElement('strong');name.textContent=agent.name;const info=document.createElement('small');info.textContent=agent.runtime+' · '+agent.state;b.append(name,info);b.onclick=()=>{selected=agent;render();};$('panes').append(b);}
+ $('pane-title').textContent=selected.name;$('current-model').textContent='Model: '+selected.model;$('agent-state').textContent=selected.runtime+' · '+selected.state;
+ $('terminal').textContent=selected.runtime==='shell'?'$ git status\nWorking tree clean (fictional)':'Agent session continues here.\nModel changes are proposed separately; nothing is sent to this terminal.';
+ updatePlan();
+}
+$('scope').onchange=updatePlan;$('model').onchange=()=>{useDefault=false;updatePlan();};
+$('default').onclick=()=>{useDefault=true;if(selected.defaultModel)$('model').value=selected.defaultModel;updatePlan();};
+$('confirm').onchange=()=>{$('apply').disabled=!$('confirm').checked||!plan().some(row=>row.agent.supported);};
+$('apply').onclick=()=>{const rows=plan();$('result').textContent='SIMULATION ONLY: '+rows.filter(r=>r.agent.supported&&r.agent.state==='idle').length+' ready, '+rows.filter(r=>r.agent.supported&&r.agent.state==='working').length+' deferred until idle, '+rows.filter(r=>!r.agent.supported).length+' skipped. No live model or pane changed.';$('confirm').checked=false;$('apply').disabled=true;};
+$('model-toggle').onclick=()=>{const visible=$('model-controls').hidden;$('model-controls').hidden=!visible;$('model-toggle').setAttribute('aria-expanded',String(visible));};
+$('back').onclick=()=>{location.href=location.protocol==='file:'?'sre-landing.html':'/mockups/sre-landing';};
+render();
+</script>
+</body>
+</html>

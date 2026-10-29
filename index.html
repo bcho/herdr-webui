@@ -313,7 +313,7 @@ select{background:var(--bg0);border:1px solid var(--line2);border-radius:8px;pad
         </form>
       </section>
     </main>
-    <section class="agents-view" id="agents-view" role="dialog" aria-modal="true" aria-labelledby="agents-title">
+    <section class="agents-view" id="agents-view" role="dialog" aria-labelledby="agents-title">
       <div class="agents-head"><button class="mobile-icon" id="agents-close" aria-label="Return to focused pane">✕</button><h2 id="agents-title">Agents<small>Across all spaces</small></h2></div>
       <div class="agents-attention" id="agents-attention" hidden></div>
       <div class="agents-summary" id="agents-summary"></div>
@@ -648,12 +648,13 @@ function setMobileView(view){
   $("mobile-menu").setAttribute("aria-expanded",String(view==="navigation"));
   $("mobile-agents").setAttribute("aria-expanded",String(view==="agents"));
   $("main-content").inert=!!view;
-  $("mobile-header").inert=!!view;
+  $("mobile-header-more").inert=!!view;
   $("session-sidebar").inert=phone.matches&&view!=="navigation";
   $("agents-view").inert=view!=="agents";
   $("session-sidebar").setAttribute("role",phone.matches?"dialog":"complementary");
   $("session-sidebar").setAttribute("aria-label","Spaces, tabs and panes");
-  if(phone.matches&&view==="navigation")$("session-sidebar").setAttribute("aria-modal","true");else $("session-sidebar").removeAttribute("aria-modal");
+  // Header toggles remain outside these dialogs and must stay accessible.
+  $("session-sidebar").removeAttribute("aria-modal");
   if(phone.matches)$("dock-input").blur();
   if(view==="navigation")$("mobile-nav-close").focus();
   if(view==="agents"){renderAgents();$("agents-close").focus();}
@@ -710,10 +711,10 @@ window.visualViewport?.addEventListener("scroll",syncMobileViewport);
 addEventListener("resize",syncMobileViewport);syncMobileViewport();setMobileView(null);
 
 /* ---------------- events ---------------- */
-$("mobile-menu").onclick=()=>setMobileView("navigation");
+$("mobile-menu").onclick=()=>{setMobileView(mobileView==="navigation"?null:"navigation");if(!mobileView)$("mobile-menu").focus();};
 $("mobile-empty-nav").onclick=()=>setMobileView("navigation");
 $("mobile-scrim").onclick=$("mobile-nav-close").onclick=()=>{setMobileView(null);$("mobile-menu").focus();};
-$("mobile-agents").onclick=()=>setMobileView("agents");
+$("mobile-agents").onclick=()=>{setMobileView(mobileView==="agents"?null:"agents");if(!mobileView)$("mobile-agents").focus();};
 $("agents-close").onclick=()=>{setMobileView(null);$("mobile-agents").focus();};
 $("agents-filter").oninput=renderAgents;
 $("agents-summary").onclick=e=>{const b=e.target.closest("[data-agent-state]");if(!b)return;agentStateFilter=agentStateFilter===b.dataset.agentState?null:b.dataset.agentState;renderAgents();};
@@ -777,7 +778,7 @@ addEventListener("keydown",e=>{
       e.preventDefault();if(mobileView){const prior=mobileView;setMobileView(null);$(prior==="agents"?"mobile-agents":"mobile-menu").focus();}else{$("dock-input").blur();$("mobile-actions").hidden=true;}return;
     }
     if(mobileView&&e.key==="Tab"){
-      const root=$(mobileView==="agents"?"agents-view":"session-sidebar"),els=[...root.querySelectorAll('button,input,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.disabled);
+      const root=$(mobileView==="agents"?"agents-view":"session-sidebar"),els=[$("mobile-menu"),$("mobile-agents"),...root.querySelectorAll('button,input,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.disabled);
       if(els.length){const first=els[0],last=els[els.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}return;
     }
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setMobileView("navigation");$("mobile-filter").focus();return;}
