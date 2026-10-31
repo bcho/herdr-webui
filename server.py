@@ -14,11 +14,14 @@ import re
 import secrets
 import socket
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+from error_log import BROWSER_KINDS, ERROR_CODES, ERROR_MESSAGES, ErrorLog, default_log_path, exception_info, route_name, status_name
 
 HERE = Path(__file__).resolve().parent
 HERDR = os.environ.get("HERDR_BIN", "herdr")
@@ -33,27 +36,28 @@ MAX_READ = 250_000
 
 
 class BridgeError(Exception):
-    def __init__(self, message: str, status: int = 502):
+    def __init__(self, message: str, status: int = 502, code: str | None = None):
         super().__init__(message)
         self.status = status
+        self.code = code or ERROR_CODES.get(message, "herdr_error" if status >= 500 else "validation_error")
 
 
 def herdr(args: list[str], *, parse: bool = True):
     try:
         done = subprocess.run([HERDR, *args], capture_output=True, text=True, timeout=TIMEOUT, check=False)
     except FileNotFoundError:
-        raise BridgeError(f"herdr not found: {HERDR}")
+        raise BridgeError(f"herdr not found: {HERDR}", code="herdr_not_found")
     except subprocess.TimeoutExpired:
-        raise BridgeError(f"herdr timed out after {TIMEOUT:g}s", 504)
+        raise BridgeError(f"herdr timed out after {TIMEOUT:g}s", 504, "herdr_timeout")
     if done.returncode != 0:
         lines = (done.stderr or done.stdout).strip().splitlines()
-        raise BridgeError((lines[-1] if lines else f"exit {done.returncode}")[:500])
+        raise BridgeError((lines[-1] if lines else f"exit {done.returncode}")[:500], code="herdr_exit")
     if not parse:
         return done.stdout
     try:
         payload = json.loads(done.stdout)
     except json.JSONDecodeError:
-        raise BridgeError("herdr returned invalid JSON")
+        raise BridgeError("herdr returned invalid JSON", code="herdr_invalid_json")
     return payload.get("result", payload) if isinstance(payload, dict) else payload
 
 
@@ -158,7 +162,7 @@ def act_followup(b):
         herdr(["pane", "send-text", pane, text], parse=False)
         herdr(["pane", "send-keys", pane, "alt+enter"], parse=False)
     except BridgeError as error:
-        raise BridgeError("Follow-up delivery failed. Text may already be in the terminal; inspect it before retrying.", error.status) from error
+        raise BridgeError("Follow-up delivery failed. Text may already be in the terminal; inspect it before retrying.", error.status, error.code) from error
     return {"ok": True}
 
 
@@ -211,8 +215,26 @@ ACTIONS = {"send": act_send, "keys": act_keys, "followup": act_followup, "prompt
 
 
 # -------------------------------------------------------------------- server
-CSP = ("default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; "
+CSP = ("default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; "
        "img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+
+
+class WebUIServer(ThreadingHTTPServer):
+    def __init__(self, address, log_file):
+        self.errors = ErrorLog(log_file)
+        try:
+            super().__init__(address, Handler)
+        except Exception as error:
+            self.errors.event("startup_error", **exception_info(error))
+            self.errors.close()
+            raise
+
+    def handle_error(self, request, client_address):
+        self.errors.event("handler_error", **exception_info(sys.exc_info()[1]))
+
+    def server_close(self):
+        super().server_close()
+        self.errors.close()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -222,20 +244,69 @@ class Handler(BaseHTTPRequestHandler):
         super().setup()
         self.connection.settimeout(self.server.request_timeout)
 
+    def _event(self, event, **fields):
+        method = getattr(self, "command", "")
+        self.server.errors.event(event, request_id=getattr(self, "request_id", None),
+                                 method=method if method in {"GET", "POST", "HEAD", "PUT", "DELETE", "OPTIONS", "PATCH"} else "OTHER",
+                                 route=route_name(getattr(self, "path", "")),
+                                 duration_ms=round((time.monotonic() - self.started) * 1000), **fields)
+
     def log_message(self, fmt, *args):
-        if getattr(self, "command", "GET") != "GET":
-            super().log_message(fmt, *args)
+        pass  # Successful polls stay quiet; never log raw request targets.
+
+    def log_error(self, fmt, *args):
+        if not self.error_logged:
+            self._event("request_error", code="request_timeout" if "timed out" in fmt else "protocol_error")
+            self.error_logged = True
+
+    def send_error(self, code, message=None, explain=None):
+        # Includes parser failures and inherited unsupported-method responses.
+        if not self.error_logged:
+            self._event("http_error", status=code, code="http_protocol_error", reason=status_name(code))
+            self.error_logged = True
+        self.close_connection = True
+        return self._json(code, {"error": status_name(code)})
+
+    def handle_one_request(self):
+        self.request_id = secrets.token_hex(8)
+        self.started = time.monotonic()
+        self.error_logged = self.response_started = False
+        self.error_code = None
+        self.command, self.path = "", ""
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout) as error:
+            self.close_connection = True
+            self._event("connection_error", code="connection_lost", **exception_info(error))
+        except Exception as error:
+            self.close_connection = True
+            self._event("unexpected_error", code="internal_error", status=500, **exception_info(error))
+            self.error_logged = True
+            if not self.response_started:
+                self._json(500, {"error": "internal server error"})
 
     def _send(self, status: int, body: bytes, ctype: str):
+        self.response_started = True
         self.send_response(status)
         for k, v in (("Content-Type", ctype), ("Content-Length", str(len(body))), ("Cache-Control", "no-store"),
                      ("X-Content-Type-Options", "nosniff"), ("Referrer-Policy", "no-referrer"),
-                     ("X-Frame-Options", "DENY"), ("Content-Security-Policy", CSP)):
+                     ("X-Frame-Options", "DENY"), ("Content-Security-Policy", CSP), ("X-Request-ID", self.request_id)):
             self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, socket.timeout) as error:
+            self.close_connection = True
+            self._event("connection_error", code="response_write_failed", **exception_info(error))
+        except Exception as error:
+            self.close_connection = True
+            self._event("unexpected_error", code="response_write_failed", **exception_info(error))
 
     def _json(self, status: int, data):
+        if status >= 400 and not self.error_logged:
+            code = self.error_code or ERROR_CODES.get(data.get("error"), "http_error")
+            self._event("http_error", status=status, code=code, reason=ERROR_MESSAGES.get(code, status_name(status)))
+            self.error_logged = True
         self._send(status, json.dumps(data).encode(), "application/json")
 
     def _host_ok(self) -> bool:
@@ -271,21 +342,28 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/":
                 page = (HERE / "index.html").read_text().replace("__CSRF_TOKEN__", TOKEN)
                 return self._send(200, page.encode(), "text/html; charset=utf-8")
+            if url.path == "/errors.js":
+                return self._send(200, (HERE / "errors.js").read_bytes(), "text/javascript; charset=utf-8")
+            if url.path in {"/mockups/sre-landing", "/mockups/model-switch"}:
+                mockup = "sre-landing.html" if url.path == "/mockups/sre-landing" else "model-switch.html"
+                return self._send(200, (HERE / "docs/mockups" / mockup).read_bytes(), "text/html; charset=utf-8")
             if url.path == "/api/tree":
                 return self._json(200, snapshot())
             if url.path == "/api/read":
                 pane = need_id(q, "pane")
                 if not any(p["pane_id"] == pane for p in snapshot(max_age=5)["panes"]):
                     raise BridgeError("pane is not in the current snapshot", 404)
-                lines = max(5, min(int(q.get("lines", "120")), 2000))
+                try:
+                    lines = max(5, min(int(q.get("lines", "120")), 2000))
+                except ValueError:
+                    raise BridgeError("bad request", 400) from None
                 fmt = "ansi" if q.get("ansi") == "1" else "text"
                 text = herdr(["pane", "read", pane, "--source", "recent-unwrapped", "--lines", str(lines), "--format", fmt], parse=False)
                 return self._json(200, {"pane": pane, "text": text[-MAX_READ:]})
             return self._json(404, {"error": "not found"})
         except BridgeError as e:
+            self.error_code = e.code
             return self._json(e.status, {"error": str(e)})
-        except ValueError:
-            return self._json(400, {"error": "bad request"})
 
     def do_POST(self):
         if not self._host_ok():
@@ -296,36 +374,50 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(403, {"error": "missing or bad CSRF token", "code": "csrf_invalid"})
         if not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self._json(415, {"error": "expected application/json"})
+        is_report = urlparse(self.path).path == "/api/client-error"
         action = ACTIONS.get(urlparse(self.path).path.removeprefix("/api/action/"))
-        if not action:
+        if not action and not is_report:
             return self._json(404, {"error": "unknown action"})
         try:
             lengths = self.headers.get_all("Content-Length", [])
             if self.headers.get_all("Transfer-Encoding") or len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
                 raise BridgeError("invalid request framing", 400)
             length = int(lengths[0])
-            if length > 64_000:
+            if length > (2048 if is_report else 64_000):
                 raise BridgeError("body too large", 413)
-            raw = self.rfile.read(length)
+            try:
+                raw = self.rfile.read(length)
+            except socket.timeout:
+                raise BridgeError("request body timed out", 408) from None
             if len(raw) != length:
                 raise BridgeError("incomplete request body", 400)
-            body = json.loads(raw or b"{}")
+            try:
+                body = json.loads(raw or b"{}")
+            except (ValueError, UnicodeError):
+                raise BridgeError("bad request", 400, "invalid_json") from None
             if not isinstance(body, dict):
                 raise BridgeError("expected object", 400)
+            if is_report:
+                kind = body.get("kind")
+                if not isinstance(kind, str) or kind not in BROWSER_KINDS:
+                    raise BridgeError("bad request", 400)
+                status = body.get("status")
+                related = body.get("request_id")
+                self._event("browser_error", code=kind, source_route=route_name(body.get("route", "")),
+                            status=status if type(status) is int and 100 <= status <= 599 else None,
+                            related_request_id=related if isinstance(related, str) and re.fullmatch(r"[a-f0-9]{16}", related) else None)
+                return self._json(200, {"ok": True})
             result = action(body)
             invalidate()
             return self._json(200, {"ok": True, "result": result})
         except BridgeError as e:
+            self.error_code = e.code
             return self._json(e.status, {"error": str(e)})
-        except socket.timeout:
-            return self._json(408, {"error": "request body timed out"})
-        except ValueError:
-            return self._json(400, {"error": "bad request"})
 
 
-def make_server(port: int, allowed_hosts=(), allowed_client_ips=()) -> ThreadingHTTPServer:
+def make_server(port: int, allowed_hosts=(), allowed_client_ips=(), *, log_file=None) -> ThreadingHTTPServer:
     clients = frozenset(ipaddress.ip_address(ip) for ip in allowed_client_ips)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    httpd = WebUIServer(("127.0.0.1", port), log_file or os.environ.get("HERDR_WEBUI_LOG_FILE") or default_log_path())
     httpd.allowed_hosts = frozenset({"127.0.0.1", "localhost", *(h.lower() for h in allowed_hosts)})
     httpd.allowed_client_ips = clients or None
     httpd.request_timeout = 10.0
@@ -339,13 +431,19 @@ def main() -> None:
                     help="additional exact Host hostname for a trusted private reverse proxy (repeatable)")
     ap.add_argument("--allow-client-ip", action="append", default=[], type=ipaddress.ip_address, metavar="IP",
                     help="allow only these exact Tailscale client IPs via local Serve, plus direct localhost (repeatable)")
+    ap.add_argument("--log-file", default=None, metavar="PATH", help="private rotating JSONL error log (or HERDR_WEBUI_LOG_FILE)")
     args = ap.parse_args()
-    httpd = make_server(args.port, args.allow_host, args.allow_client_ip)
+    httpd = make_server(args.port, args.allow_host, args.allow_client_ip, log_file=args.log_file)
     print(f"Herdr web UI: http://127.0.0.1:{args.port}", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    except Exception as error:
+        httpd.errors.event("server_error", **exception_info(error))
+        raise
+    finally:
+        httpd.server_close()
 
 
 if __name__ == "__main__":

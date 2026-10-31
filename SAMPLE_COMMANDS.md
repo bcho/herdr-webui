@@ -6,7 +6,7 @@ service setup in [README.md](README.md). Run repository commands from its root.
 1. Run regression tests without touching the live Herdr server.
 
 ```bash
-python3 -m unittest test_server -v
+python3 -m unittest test_server test_error_log -v
 # Expect: OK; tests use a fake Herdr executable.
 ```
 
@@ -45,7 +45,8 @@ https://<machine>.<tailnet>.ts.net/
 ```
 
 Expect one focused terminal, **☰** for the space/tab/pane tree, and **Agents** for
-agents sorted Working → Blocked → Done → Idle. Tap a state count to filter;
+agents sorted Working → Blocked → Done → Idle. Tap either header button again
+or its popup's × to dismiss; selection and drafts remain unchanged. Tap a state count to filter;
 tap that same count again to show all. Selecting a pane returns to its output
 without sending input.
 Use **··· → Close pane** for confirmed removal, or **Ctrl-C ×2** to send two
@@ -60,12 +61,42 @@ Safari's Share > Add to Home Screen makes a convenient shortcut.
 7. Run browser regressions, if Playwright Python and Google Chrome are already installed.
 
 ```bash
-python3 -m unittest test_ui -v
+python3 -m unittest test_ui test_mockup -v
 # Expect: OK; fictional loopback sessions only, no live terminal commands.
+```
+
+8. Open the fictional landing page/Pi chat preview in your browser.
+
+```text
+http://127.0.0.1:8780/mockups/sre-landing
+# Expect: scenario-specific diagnosis/incidents/approvals; healthy upgrade prompts; LLM reset or recent models. No live changes.
+```
+
+9. Preview model selection inside a fictional Herdr pane view.
+
+```text
+http://127.0.0.1:8780/mockups/model-switch
+# Expect: current-pane/all-compatible scopes, skipped/deferred agents, confirmation and simulation only.
+```
+
+10. Inspect recent safe error classifications (honors a custom log location).
+
+```bash
+python3 -c 'import json,os; from pathlib import Path; p=Path(os.environ.get("HERDR_WEBUI_LOG_FILE", str(Path(os.environ.get("XDG_STATE_HOME", str(Path.home()/".local/state")))/"herdr-webui/errors.jsonl"))); rows=p.read_text().splitlines(); print("\n".join(json.dumps({k:e.get(k) for k in ("time","event","code","status","request_id")}) for e in map(json.loads,rows[-20:])))'
+# Expect: safe JSON events with error codes and request IDs; an empty file is normal before an error.
+```
+
+11. Run on a separate port with an explicit error file (stop with Ctrl-C).
+
+```bash
+python3 server.py --port 9000 --log-file "$HOME/.local/state/herdr-webui/preview-errors.jsonl"
+# Expect: a loopback listener on port 9000 and a private error log.
 ```
 
 | Failure | Fix |
 | --- | --- |
+| Cannot open error log | Choose an owner-controlled writable `--log-file`; symlinks are rejected. |
+| Browser diagnostic could not reach the server | Check service/network and stderr; reporting failure never retries a terminal action. |
 | Service exits: address already in use | Stop the old manually started bridge on port 8780; launchd retries. |
 | HTTP 421 / bad host | Ensure the LaunchAgent's `--allow-host` exactly matches Serve's hostname; restart. |
 | API returns Herdr unavailable | Start Herdr under the same macOS user; verify `HERDR_BIN` in the LaunchAgent. |

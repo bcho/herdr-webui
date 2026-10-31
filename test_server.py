@@ -13,7 +13,8 @@ import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-TMP = Path(tempfile.mkdtemp())
+(Path.home() / "tmp").mkdir(exist_ok=True)
+TMP = Path(tempfile.mkdtemp(dir=Path.home() / "tmp"))
 LOG = TMP / "argv.log"
 FAKE = TMP / "herdr"
 FAKE.write_text(f"""#!{sys.executable}
@@ -46,6 +47,7 @@ else:
 """)
 FAKE.chmod(FAKE.stat().st_mode | stat.S_IEXEC)
 os.environ["HERDR_BIN"] = str(FAKE)
+os.environ["HERDR_WEBUI_LOG_FILE"] = str(TMP / "errors.jsonl")
 sys.path.insert(0, str(HERE))
 import server  # noqa: E402
 

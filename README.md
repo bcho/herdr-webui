@@ -54,6 +54,8 @@ output and direct agent interaction from the browser.
   Ctrl-C to exit can return to the shell. Exit behavior depends on the agent.
 - Normal navigation never changes the TUI's focus. Use **New session** in the
   navigation drawer to launch a session.
+- On phones, tap the hamburger or Agents button again to close its popup;
+  the × buttons, Escape, and navigation backdrop still close it too.
 - Terminal output scrolls independently; viewport sizing follows the on-screen
   keyboard. After a service restart, an explicitly rejected stale security token
   is refreshed automatically and the original action is retried once. Other
@@ -177,6 +179,51 @@ restarts. After changing code, restart with
 
 See [SAMPLE_COMMANDS.md](SAMPLE_COMMANDS.md) for checks and troubleshooting.
 
+## Error logs and recovery-page mockup
+
+Every handled HTTP error (including GET failures, bad JSON, CSRF rejection,
+parser errors and unsupported methods), unexpected request/server exception,
+and detected connection failure writes a structured JSONL error event. Successful
+polling is quiet. Events include a timestamp, safe error code/reason, normalized
+route, request ID and duration. Responses include `X-Request-ID` for correlation.
+Unexpected exceptions record their type and source locations, never exception
+messages, source lines or local variables. Herdr failures use classifications
+such as `herdr_invalid_json`, `herdr_timeout` and `herdr_exit`; command output is
+not copied into the log.
+
+The default file is `~/.local/state/herdr-webui/errors.jsonl` (respects
+`XDG_STATE_HOME`). Override with `--log-file PATH` or `HERDR_WEBUI_LOG_FILE`.
+Files are owner-only (`0600`), append across restarts, and rotate at 5 MB with
+three backups. New log directories are `0700`. An unusable log path prevents
+startup; a later disk/write failure emits a safe diagnostic and event to stderr
+instead. Keep the service's stderr capture enabled as the fallback.
+
+Browser diagnostics report fetch failures, malformed JSON/responses, CSRF-refresh
+failures, resource/script errors and unhandled promise rejections to a protected
+local endpoint. Reports contain only allowlisted categories, normalized routes,
+HTTP status and an optional related request ID—not raw messages/stacks, full
+URLs, drafts, request bodies, headers, credentials, CSRF tokens or terminal output.
+The reporter never retries terminal actions. Browser failures cannot reach the
+file while the server/network is unreachable; a fixed console warning indicates
+that limitation. Abrupt process termination and failures before the browser
+reporter loads likewise cannot guarantee an application-log record.
+
+Preview the [landing page and Pi SRE chat mockup](docs/mockups/sre-landing.html)
+at `/mockups/sre-landing` on the running bridge. It uses fictional health and chat
+responses and makes no service/API requests. It is **not a live watchdog, chat
+integration or independent recovery server**. Its incidents, root causes and
+approval proposals change with the selected outage. LLM recovery illustrates
+Reset to default or the last five user-used models sorted by recency, not a fixed
+provider priority.
+
+A separate [model-switching mockup](docs/mockups/model-switch.html) is served at
+`/mockups/model-switch`: preview a Change model control in the Herdr pane view,
+scoped to the current agent or all compatible agents. Unsupported runtimes are
+skipped and working agents defer until idle; all actions are simulated. There
+is no live model-switch endpoint in this bridge. The proposed production
+companion must run separately so it remains reachable when the bridge fails.
+See [mockup notes](docs/mockups/README.md).
+
 ## Security model
 
 This UI can type into your terminals, so it is deliberately loopback-bound:
@@ -217,7 +264,7 @@ not a password or a tailnet firewall rule.
 ## Test
 
 ```bash
-python3 -m unittest test_server -v   # uses a fake herdr binary; no live server needed
+python3 -m unittest test_server test_error_log -v   # fictional requests; no live terminal commands
 ```
 
 Optional browser regressions use an **already installed** Playwright Python package
@@ -225,7 +272,7 @@ and Google Chrome. They run against fictional sessions on an ephemeral loopback
 server and never send commands to your real Herdr server:
 
 ```bash
-python3 -m unittest test_ui -v
+python3 -m unittest test_ui test_mockup -v
 ```
 
 No browser packages are required to run the application. Browser viewport tests

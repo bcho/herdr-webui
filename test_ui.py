@@ -63,6 +63,14 @@ class FixtureHandler(BaseHTTPRequestHandler):
             if self.server.fail_page:
                 return self.reply({"error": "Fixture page unavailable"}, 503)
             return self.reply((HERE / "index.html").read_text().replace("__CSRF_TOKEN__", self.server.csrf_token), html=True)
+        if url.path == "/errors.js":
+            body = (HERE / "errors.js").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if url.path == "/api/tree":
             if self.server.delay_tree:
                 self.server.tree_started.set()
@@ -81,6 +89,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
+        if self.path == "/api/client-error":
+            self.server.reports.append(body)
+            return self.reply({"ok": True})
         self.server.post_attempts += 1
         if self.headers.get("X-CSRF-Token") != self.server.csrf_token:
             return self.reply({"error": "missing or bad CSRF token", "code": "csrf_invalid"}, 403)
@@ -119,7 +130,7 @@ class PhoneUITest(unittest.TestCase):
         self.httpd.csrf_token = "fictional-test-token"
         self.httpd.page_reads = self.httpd.post_attempts = 0
         self.httpd.action_started, self.httpd.action_release = threading.Event(), threading.Event()
-        self.httpd.actions, self.httpd.reads = [], []
+        self.httpd.actions, self.httpd.reads, self.httpd.reports = [], [], []
         self.httpd.delay_pane = None
         self.httpd.read_started, self.httpd.read_release = threading.Event(), threading.Event()
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -285,6 +296,59 @@ class PhoneUITest(unittest.TestCase):
         self.page.keyboard.press("Escape")
         self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
         self.assertTrue(self.page.locator("#dock").is_visible())
+
+    def test_header_buttons_toggle_popups_and_keep_x_close(self):
+        self.open()
+        self.page.locator("#dock-input").fill("preserve popup draft")
+        for trigger, popup, close in (("#mobile-menu", "#session-sidebar", "#mobile-nav-close"),
+                                      ("#mobile-agents", "#agents-view", "#agents-close")):
+            self.page.locator(trigger).tap()
+            self.assertTrue(self.page.locator(popup).is_visible())
+            self.assertEqual(self.page.locator(trigger).get_attribute("aria-expanded"), "true")
+            self.page.locator(trigger).tap()
+            self.assertFalse(self.page.locator(popup).is_visible())
+            self.assertEqual(self.page.locator(trigger).get_attribute("aria-expanded"), "false")
+            self.assertTrue(self.page.locator(trigger).evaluate("el => el === document.activeElement"))
+            self.page.locator(trigger).tap()
+            self.page.locator(close).tap()
+            self.assertFalse(self.page.locator(popup).is_visible())
+        self.assertEqual(self.page.locator("#dock-input").input_value(), "preserve popup draft")
+        self.assertEqual(self.page.locator("#mobile-title").inner_text(), "api-agent")
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_header_toggles_remain_onscreen_with_long_labels_and_many_agents(self):
+        self.httpd.tree["panes"][1]["label"] = "long-agent-title-" * 12
+        self.httpd.tree["workspaces"][0]["label"] = "long-workspace-" * 12
+        for i in range(32):
+            self.httpd.tree["panes"].append({"pane_id": f"extra-{i}", "tab_id": "t1", "workspace_id": "w1", "label": f"extra-agent-{i}", "agent": "pi", "agent_status": "idle"})
+        self.open()
+        for width, height in ((390, 844), (360, 240)):
+            self.page.set_viewport_size({"width": width, "height": height})
+            for trigger in ("#mobile-menu", "#mobile-agents"):
+                self.page.locator(trigger).tap()
+                self.page.locator(trigger).tap()
+                box = self.page.locator(trigger).bounding_box()
+                self.assertLessEqual(box["x"] + box["width"], width)
+                self.assertGreaterEqual(box["x"], 0)
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_header_switches_between_popups_and_keyboard_can_close(self):
+        self.open()
+        self.page.locator("#mobile-menu").tap()
+        self.page.locator("#mobile-agents").tap()
+        self.assertFalse(self.page.locator("#session-sidebar").is_visible())
+        self.assertTrue(self.page.locator("#agents-view").is_visible())
+        self.page.locator("#mobile-agents").focus()
+        self.page.keyboard.press("Enter")
+        self.assertFalse(self.page.locator("#agents-view").is_visible())
+        self.page.locator("#mobile-agents").tap()
+        self.page.locator("#mobile-menu").tap()
+        self.assertTrue(self.page.locator("#session-sidebar").is_visible())
+        self.assertFalse(self.page.locator("#agents-view").is_visible())
+        self.page.locator("#mobile-menu").focus()
+        self.page.keyboard.press("Space")
+        self.assertFalse(self.page.locator("#session-sidebar").is_visible())
+        self.assertEqual(self.httpd.actions, [])
 
     def test_drafts_do_not_cross_panes_and_survive_return(self):
         self.open()
@@ -678,8 +742,16 @@ class PhoneUITest(unittest.TestCase):
         self.page.get_by_role("button", name="Show all agents").click()
         self.page.locator(".agent-card").last.focus()
         self.page.keyboard.press("Tab")
+        self.assertTrue(self.page.locator("#mobile-menu").evaluate("el => el === document.activeElement"))
+        self.page.keyboard.press("Tab")
+        self.assertTrue(self.page.locator("#mobile-agents").evaluate("el => el === document.activeElement"))
+        self.page.keyboard.press("Tab")
         self.assertTrue(self.page.locator("#agents-close").evaluate("el => el === document.activeElement"))
         self.assertTrue(self.page.locator("#main-content").evaluate("el => el.inert"))
+        self.page.locator("#mobile-menu").focus()
+        self.page.keyboard.press("Shift+Tab")
+        self.assertTrue(self.page.locator(".agent-card").last.evaluate("el => el === document.activeElement"))
+        self.assertFalse(self.page.locator("#mobile-header").evaluate("el => el.inert"))
 
     def test_resizing_preserves_desktop_grid_and_mobile_selection(self):
         self.page.set_viewport_size({"width": 1440, "height": 1000})
@@ -1004,6 +1076,56 @@ class PhoneUITest(unittest.TestCase):
             self.page.get_by_role("button", name="Show all agents").click()
             self.assertTrue(self.page.evaluate("document.documentElement.scrollWidth <= innerWidth"))
             self.page.get_by_role("button", name="Return to focused pane").click()
+
+
+class BrowserDiagnosticsTest(unittest.TestCase):
+    setUpClass = classmethod(PhoneUITest.setUpClass.__func__)
+    tearDownClass = classmethod(PhoneUITest.tearDownClass.__func__)
+    setUp = PhoneUITest.setUp
+    tearDown = PhoneUITest.tearDown
+    open = PhoneUITest.open
+
+    def test_missing_diagnostic_script_does_not_break_offline_recovery_or_toasts(self):
+        self.page.route(self.base + "/errors.js", lambda route: route.abort())
+        self.httpd.fail_tree = True
+        self.page.goto(self.base + "/")
+        self.page.wait_for_function("S.err !== null")
+        self.page.evaluate("toast('Fixture visible error', 'err')")
+        self.page.get_by_text("Fixture visible error", exact=True).wait_for()
+        self.httpd.fail_tree = False
+        self.page.wait_for_function("S.tree !== null && S.err === null")
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_browser_reports_invalid_json_without_sensitive_content(self):
+        self.open()
+        self.page.route(self.base + "/api/read*", lambda route: route.fulfill(status=200, content_type="application/json", body="SECRET-RESPONSE"))
+        with self.page.expect_response(lambda response: response.url.endswith("/api/client-error")):
+            self.page.evaluate("getJSON('/api/read?pane=SECRET-PANE').catch(() => {})")
+        self.assertTrue(any(report["kind"] == "invalid_json" for report in self.httpd.reports))
+        self.assertNotIn("SECRET", json.dumps(self.httpd.reports))
+        self.assertEqual(self.httpd.actions, [])
+
+    def test_uncaught_errors_and_rejections_are_reported_without_message(self):
+        self.open()
+        for script, kind in (("dispatchEvent(new ErrorEvent('error', {message:'SECRET-MESSAGE'}))", "javascript_error"),
+                             ("dispatchEvent(new PromiseRejectionEvent('unhandledrejection', {promise:Promise.resolve(),reason:'SECRET-REJECTION'}))", "unhandled_rejection")):
+            with self.page.expect_response(lambda response: response.url.endswith("/api/client-error")):
+                self.page.evaluate(script)
+            self.assertTrue(any(report["kind"] == kind for report in self.httpd.reports))
+        self.assertNotIn("SECRET", json.dumps(self.httpd.reports))
+
+    def test_report_failure_does_not_recurse_or_replay_action(self):
+        self.open()
+        attempts = []
+        def fail_report(route):
+            attempts.append(route.request.url)
+            route.abort()
+        self.page.route(self.base + "/api/client-error", fail_report)
+        self.page.route(self.base + "/api/action/followup", lambda route: route.abort())
+        with self.page.expect_console_message(predicate=lambda message: "diagnostic could not reach" in message.text):
+            self.page.evaluate("act('followup',{pane:'p2',text:'SECRET-DRAFT'}).catch(() => {})")
+        self.assertEqual(self.httpd.actions, [])
+        self.assertEqual(len(attempts), 1)
 
 
 class RealBridgeUITest(unittest.TestCase):
